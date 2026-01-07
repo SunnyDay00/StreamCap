@@ -384,7 +384,19 @@
     "model_download_success": "模型下载完成",
     "model_download_failed": "模型下载失败",
     "download_warning_tip": "* 模型文件较大(约1.5GB)，下载过程中界面可能会短暂无响应，请保持网络通畅。",
-    "go_to_configure_models": "请先在“设置 -> 识别文本”中下载语音识别模型。"
+    "go_to_configure_models": "请先在“设置 -> 识别文本”中下载语音识别模型。",
+    "ai_config_title": "AI配置",
+    "ai_config_tip": "配置AI模型以优化和增强语音识别结果。",
+    "enable_ai_optimization": "启用AI文本优化",
+    "ai_api_key": "API Key",
+    "ai_base_url": "API Base URL",
+    "ai_model": "AI模型",
+    "test_configuration": "测试配置",
+    "test_connection_start": "正在测试连接...",
+    "please_enter_api_key": "请先输入API Key。",
+    "connection_success": "连接成功",
+    "connection_failed": "连接失败",
+    "ai_model_tip": "选择用于文本优化的AI模型。推荐使用阿里云Qwen3模型获得更好的中文处理效果。"
   },
   "about_page": {
     "about_project": "关于本程序",
@@ -480,7 +492,8 @@
     "identifying": "正在识别中...",
     "identification_result": "识别结果",
     "identification_failed": "识别失败",
-    "copy_text": "复制文本"
+    "copy_text": "复制文本",
+    "ai_optimized_label": "AI 优化"
   },
   "video_player": {
     "open_live_room_page": "打开直播间页面",

@@ -172,10 +172,27 @@ class StoragePage(BasePage):
             # Process sequentially
             loop = asyncio.get_running_loop()
             
+            # Initialize AI Optimizer
+            from ...core.ai.ai_optimizer import AITextOptimizer
+            ai_optimizer = AITextOptimizer(self.app.config_manager)
+            
             for file_path in files_to_process:
                 try:
+                    # 1. Local STT
                     text_result = await loop.run_in_executor(self.executor, lambda: stt_service.transcribe(file_path))
-                    self.transcription_manager.set_text(file_path, text_result)
+                    
+                    is_optimized = False
+                    # 2. AI Optimization (Optional)
+                    try:
+                        optimized_text = await ai_optimizer.optimize_text(text_result)
+                        if optimized_text != text_result:
+                            text_result = optimized_text
+                            is_optimized = True
+                    except Exception as ai_e:
+                        logger.error(f"AI Optimization failed for {file_path}: {ai_e}")
+                        # Fallback to original text, no critical failure
+                            
+                    self.transcription_manager.set_text(file_path, text_result, metadata={"ai_optimized": is_optimized} if is_optimized else None)
                 except Exception as e:
                     logger.error(f"Failed to transcribe {file_path}: {e}")
                 finally:
@@ -282,9 +299,24 @@ class StoragePage(BasePage):
 
         try:
             loop = asyncio.get_running_loop()
+            
+            # 1. Local STT
             text_result = await loop.run_in_executor(self.executor, lambda: stt_service.transcribe(file_path))
             
-            self.transcription_manager.set_text(file_path, text_result)
+            # 2. AI Optimization
+            is_optimized = False
+            try:
+                from ...core.ai.ai_optimizer import AITextOptimizer
+                ai_optimizer = AITextOptimizer(self.app.config_manager)
+                
+                optimized_text = await ai_optimizer.optimize_text(text_result)
+                text_result = optimized_text
+                is_optimized = True
+            except Exception as ai_e:
+                logger.error(f"AI Optimization failed: {ai_e}")
+                # Clean error handling: proceed with original text
+            
+            self.transcription_manager.set_text(file_path, text_result, metadata={"ai_optimized": is_optimized} if is_optimized else None)
             
             # Show result or just finish? 
             # User wants it in background. So no popup.
@@ -297,13 +329,34 @@ class StoragePage(BasePage):
             self.processing_files.discard(file_path)
             await self.update_file_list()
 
-    def show_transcription_result(self, text):
+    def show_transcription_result(self, file_path):
+        text = self.transcription_manager.get_text(file_path)
+        if not text:
+            return
+
+        metadata = self.transcription_manager.get_metadata(file_path)
+        is_ai_optimized = metadata.get("ai_optimized", False)
+
         def copy_to_clipboard(e):
             self.app.page.set_clipboard(text)
             self.app.snack_bar.show_snack_bar(self._["copy_success"])
 
+        title_content = ft.Row([
+            ft.Text(self._["identification_result"], size=20, weight=ft.FontWeight.BOLD),
+        ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
+
+        if is_ai_optimized:
+            title_content.controls.append(
+                ft.Container(
+                    content=ft.Text(self._.get("ai_optimized_label", "AI Optimized"), size=10, color=ft.Colors.WHITE),
+                    bgcolor=ft.Colors.BLUE,
+                    padding=5,
+                    border_radius=5
+                )
+            )
+
         result_dialog = ft.AlertDialog(
-            title=ft.Text(self._["identification_result"]),
+            title=title_content,
             content=ft.Column(
                 [
                     ft.TextField(
@@ -328,9 +381,8 @@ class StoragePage(BasePage):
         self.app.page.update()
 
     def view_history(self, file_path):
-        text = self.transcription_manager.get_text(file_path)
-        if text:
-            self.show_transcription_result(text)
+        if self.transcription_manager.has_text(file_path):
+            self.show_transcription_result(file_path)
 
     def export_text_file(self, file_path):
         text = self.transcription_manager.get_text(file_path)
@@ -365,8 +417,8 @@ class StoragePage(BasePage):
                     return []
                 with os.scandir(self.current_path) as it:
                     for entry in it:
-                        # Filter out .txt files created by transcription
-                        if entry.is_file() and entry.name.lower().endswith(".txt"):
+                        # Filter out .txt and .meta files created by transcription
+                        if entry.is_file() and (entry.name.lower().endswith(".txt") or entry.name.lower().endswith(".meta")):
                             continue
                         _items.append((entry.name, entry.is_dir(), entry.path))
                 return sorted(_items, key=lambda x: (-x[1], x[0].lower()))

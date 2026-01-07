@@ -594,6 +594,93 @@ class SettingsPage(PageBase):
                         self.download_progress_bar,
                     ]
 
+
+            # AI Configuration Section
+            from ...core.ai.ai_optimizer import CONF_AI_API_KEY, CONF_AI_BASE_URL, CONF_AI_MODEL, CONF_AI_ENABLED, DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL
+
+            def on_ai_test_click(e):
+                self.app.page.run_task(test_ai_connection)
+
+            async def test_ai_connection():
+                from ...core.ai.ai_optimizer import AITextOptimizer
+                optimizer = AITextOptimizer(self.config_manager)
+                
+                # Get current values from UI inputs (via bound data or directly from config as they saved on change)
+                # Since updates are auto-saved on change, we can read from config
+                
+                api_key = self.get_config_value(CONF_AI_API_KEY)
+                base_url = self.get_config_value(CONF_AI_BASE_URL, DEFAULT_AI_BASE_URL)
+                model = self.get_config_value(CONF_AI_MODEL, DEFAULT_AI_MODEL)
+                
+                if not api_key:
+                    await self.app.snack_bar.show_snack_bar(self._["please_enter_api_key"], bgcolor=ft.Colors.RED)
+                    return
+
+                await self.app.snack_bar.show_snack_bar(self._["test_connection_start"], bgcolor=ft.Colors.BLUE)
+                
+                success, msg = await optimizer.test_connection(api_key, base_url, model)
+                if success:
+                    await self.app.snack_bar.show_snack_bar(f"{self._['connection_success']}: {msg}", bgcolor=ft.Colors.GREEN)
+                else:
+                    await self.app.snack_bar.show_snack_bar(f"{self._['connection_failed']}: {msg}", bgcolor=ft.Colors.RED)
+
+            ai_config_controls = [
+                ft.Divider(height=20, thickness=1),
+                ft.Text(self._["ai_config_title"], size=20, weight=ft.FontWeight.BOLD),
+                ft.Text(self._["ai_config_tip"], size=12, color=ft.Colors.GREY),
+                
+                self.create_setting_row(
+                    self._["enable_ai_optimization"],
+                    ft.Switch(
+                        value=self.get_config_value(CONF_AI_ENABLED, False),
+                        data=CONF_AI_ENABLED,
+                        on_change=self.on_change
+                    )
+                ),
+                self.create_setting_row(
+                    f"{self._['ai_api_key']} *",
+                    ft.TextField(
+                        value=self.get_config_value(CONF_AI_API_KEY),
+                        data=CONF_AI_API_KEY,
+                        password=True,
+                        can_reveal_password=True,
+                        width=400,
+                        on_change=self.on_change,
+                        hint_text="sk-..."
+                    )
+                ),
+                self.create_setting_row(
+                    self._["ai_base_url"],
+                    ft.TextField(
+                        value=self.get_config_value(CONF_AI_BASE_URL, DEFAULT_AI_BASE_URL),
+                        data=CONF_AI_BASE_URL,
+                        width=400,
+                        on_change=self.on_change
+                    )
+                ),
+                self.create_setting_row(
+                    self._["ai_model"],
+                    ft.Column([
+                        ft.TextField(
+                            value=self.get_config_value(CONF_AI_MODEL, DEFAULT_AI_MODEL),
+                            data=CONF_AI_MODEL,
+                            width=400,
+                            on_change=self.on_change,
+                            hint_text="e.g. gpt-3.5-turbo, qwen-max"
+                        ),
+                         ft.Text(self._["ai_model_tip"], size=12, color=ft.Colors.GREY)
+                    ])
+                ),
+                ft.ElevatedButton(
+                    self._["test_configuration"],
+                    icon=ft.icons.SCIENCE,
+                    on_click=on_ai_test_click,
+                    style=ft.ButtonStyle(bgcolor=ft.Colors.GREEN, color=ft.Colors.WHITE)
+                )
+            ]
+            
+            content_controls.extend(ai_config_controls)
+
         except Exception as e:
             logger.error(f"Failed to initialize LocalSTTService or UI: {e}")
             content_controls = [ft.Text(f"Error initializing local STT service: {e}", color=ft.Colors.RED)]
