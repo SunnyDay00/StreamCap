@@ -21,8 +21,11 @@ class SettingsPage(PageBase):
         self.user_config = self.config_manager.load_user_config()
         self.language_option = self.config_manager.load_language_config()
         self.default_config = self.config_manager.load_default_config()
+        self.user_config = self.config_manager.load_user_config()
+        self.web_auth_config = self.config_manager.load_web_auth_config()
         self.cookies_config = self.config_manager.load_cookies_config()
         self.accounts_config = self.config_manager.load_accounts_config()
+        self.about_config = self.config_manager.load_about_config()
 
         self.language_code = None
         self.default_language = None
@@ -31,6 +34,7 @@ class SettingsPage(PageBase):
         self.tab_push = None
         self.tab_cookies = None
         self.tab_accounts = None
+        self.tab_cloud = None
         self.tab_security = None
         self.has_unsaved_changes = {}
         self.delay_handler = DelayedTaskExecutor(self.app, self)
@@ -39,67 +43,75 @@ class SettingsPage(PageBase):
         self.page.on_keyboard_event = self.on_keyboard
 
     async def load(self):
-        self.content_area.clean()
-        language = self.app.language_manager.language
-        self._ = language["settings_page"] | language["video_quality"] | language["base"]
-        self.tab_recording = self.create_recording_settings_tab()
-        self.tab_push = self.create_push_settings_tab()
-        self.tab_cookies = self.create_cookies_settings_tab()
-        self.tab_accounts = self.create_accounts_settings_tab()
-        self.page.on_keyboard_event = self.on_keyboard
+        try:
+            self.content_area.clean()
+            language = self.app.language_manager.language
+            self._ = language["settings_page"] | language["video_quality"] | language["base"]
+            self.tab_recording = self.create_recording_settings_tab()
+            self.tab_push = self.create_push_settings_tab()
+            self.tab_cookies = self.create_cookies_settings_tab()
+            self.tab_accounts = self.create_accounts_settings_tab()
+            self.tab_cloud = self.create_cloud_settings_tab()
+            self.page.on_keyboard_event = self.on_keyboard
 
-        tabs = [
-            ft.Tab(text=self._["recording_settings"], content=self.tab_recording),
-            ft.Tab(text=self._["push_settings"], content=self.tab_push),
-            ft.Tab(text=self._["cookies_settings"], content=self.tab_cookies),
-            ft.Tab(text=self._["accounts_settings"], content=self.tab_accounts),
-        ]
-        
-        if self.app.page.web:
-            self.tab_security = self.create_security_settings_tab()
-            tabs.append(ft.Tab(text=self._["security_settings"], content=self.tab_security))
+            tabs = [
+                ft.Tab(text=self._["recording_settings"], content=self.tab_recording),
+                ft.Tab(text=self._["push_settings"], content=self.tab_push),
+                ft.Tab(text=self._["cookies_settings"], content=self.tab_cookies),
+                ft.Tab(text=self._["accounts_settings"], content=self.tab_accounts),
+                ft.Tab(text=self._["cloud_model_settings"], content=self.tab_cloud),
+            ]
+            
+            if self.app.page.web:
+                self.tab_security = self.create_security_settings_tab()
+                tabs.append(ft.Tab(text=self._["security_settings"], content=self.tab_security))
 
-        settings_tabs = ft.Tabs(
-            selected_index=0,
-            animation_duration=300,
-            tabs=tabs,
-            expand=True,
-        )
-
-        if self.app.is_mobile:
-            scrollable_content = ft.Container(
-                content=settings_tabs,
-                expand=True,
-                width=float("inf"),
-            )
-        else:
-            scrollable_content = ft.Container(
-                content=settings_tabs,
+            settings_tabs = ft.Tabs(
+                selected_index=0,
+                animation_duration=300,
+                tabs=tabs,
                 expand=True,
             )
 
-        settings_content = ft.Container(
-            content=scrollable_content,
-            expand=True,
-        )
+            if self.app.is_mobile:
+                scrollable_content = ft.Container(
+                    content=settings_tabs,
+                    expand=True,
+                    width=float("inf"),
+                )
+            else:
+                scrollable_content = ft.Container(
+                    content=settings_tabs,
+                    expand=True,
+                )
 
-        column_layout = ft.Column(
-            [
-                settings_content,
-            ],
-            spacing=0,
-            expand=True,
-            width=float("inf") if self.app.is_mobile else None,
-        )
+            settings_content = ft.Container(
+                content=scrollable_content,
+                expand=True,
+            )
 
-        self.content_area.controls.append(column_layout)
-        self.app.complete_page.update()
+            column_layout = ft.Column(
+                [
+                    settings_content,
+                ],
+                spacing=0,
+                expand=True,
+                width=float("inf") if self.app.is_mobile else None,
+            )
+
+            self.content_area.controls.append(column_layout)
+            self.app.complete_page.update()
+        except Exception as e:
+            logger.error(f"Error loading SettingsPage: {e}")
+            self.content_area.controls.append(ft.Text(f"Error loading settings: {e}", color=ft.Colors.RED))
+            self.app.complete_page.update()
 
     def init_unsaved_changes(self):
         self.has_unsaved_changes = {
             "user_config": False,
             "cookies_config": False,
-            "accounts_config": False
+            "accounts_config": False,
+            "cloud_config": False
         }
 
     def load_language(self):
@@ -179,7 +191,7 @@ class SettingsPage(PageBase):
         """Handle changes in any input field and trigger auto-save."""
         key = e.control.data
         self.cookies_config[key] = e.data
-        self.page.run_task(self.delay_handler.start_task_timer, self.save_cookies_after_delay, None)
+        self.page.run_task(self.delay_handler.start_task_timer, self.save_web_auth_config_after_delay, None)
         self.has_unsaved_changes['cookies_config'] = True
 
     def on_accounts_change(self, e):
@@ -194,11 +206,11 @@ class SettingsPage(PageBase):
         self.has_unsaved_changes['accounts_config'] = True
 
     async def save_user_config_after_delay(self, delay):
-        await asyncio.sleep(delay)
-        if self.has_unsaved_changes['user_config']:
-            await self.config_manager.save_user_config(self.user_config)
+        if delay:
+            await asyncio.sleep(delay)
+        await self.config_manager.save_user_config(self.user_config)
 
-    async def save_cookies_after_delay(self, delay):
+    async def save_web_auth_config_after_delay(self, delay):
         await asyncio.sleep(delay)
         if self.has_unsaved_changes['cookies_config']:
             await self.config_manager.save_cookies_config(self.cookies_config)
@@ -480,6 +492,118 @@ class SettingsPage(PageBase):
                             ),
                         ),
                     ],
+                    is_mobile,
+                ),
+            ],
+            spacing=10,
+            scroll=ft.ScrollMode.AUTO,
+        )
+
+    def create_cloud_settings_tab(self):
+        """Create UI elements for Local Speech Recognition Model settings."""
+        is_mobile = self.app.is_mobile
+        
+        try:
+            from ...core.stt.local_stt import LocalSTTService, MODELS
+            stt_service = LocalSTTService(self.config_manager)
+            
+            self.download_progress_bar = ft.ProgressBar(width=400, visible=False)
+            self.download_status_text = ft.Text(visible=False)
+            self.model_list_container = ft.Column()  # Use a Column for the list
+            self.model_list_ref = ft.Ref[ft.Column]()
+
+            def create_model_list():
+                try:
+                    is_ready, status = stt_service.check_models_status()
+                    rows = []
+                    for key, model_id in MODELS.items():
+                        ready = status.get(key, False)
+                        rows.append(
+                            ft.Row([
+                                ft.Icon(ft.icons.CHECK_CIRCLE if ready else ft.icons.CANCEL, 
+                                        color=ft.Colors.GREEN if ready else ft.Colors.RED),
+                                ft.Text(f"{key.upper()} Model: {model_id.split('/')[-1]}", expand=True),
+                                ft.Text(self._["model_status_ready"] if ready else self._["model_status_missing"], 
+                                        color=ft.Colors.GREEN if ready else ft.Colors.RED)
+                            ])
+                        )
+                    return rows
+                except Exception as e:
+                    logger.error(f"Error creating model list: {e}")
+                    return [ft.Text(f"Error loading model status: {e}", color=ft.Colors.RED)]
+
+            def update_model_list_ui():
+                if self.model_list_ref.current:
+                    self.model_list_ref.current.controls = create_model_list()
+                    self.model_list_ref.current.update()
+
+            def download_models(e):
+                self.download_progress_bar.visible = True
+                self.download_status_text.visible = True
+                self.download_status_text.value = self._["model_downloading"]
+                self.page.update()
+                
+                def progress_callback(msg):
+                    self.download_status_text.value = msg
+                    self.page.update()
+                
+                self.app.page.run_task(_download_task, progress_callback)
+
+            async def _download_task(callback):
+                try:
+                    loop = asyncio.get_running_loop()
+                    success, msg = await loop.run_in_executor(None, stt_service.download_models, callback)
+                    self.download_status_text.value = self._["model_download_success"] if success else f"{self._['model_download_failed']}: {msg}"
+                except Exception as e:
+                     self.download_status_text.value = f"Download error: {e}"
+                
+                self.download_progress_bar.visible = False
+                
+                # Safely update UI
+                try:
+                    update_model_list_ui()
+                except Exception as e:
+                    logger.error(f"Error updating model list UI: {e}")
+                self.page.update()
+            
+            # Initial Load
+            initial_rows = create_model_list()
+            
+            content_controls = [
+                        ft.Container(
+                            content=ft.Column(controls=initial_rows, ref=self.model_list_ref), 
+                            padding=10
+                        ),
+                        ft.Container(
+                             content=ft.Text(self._.get("download_warning_tip", "* Large download warning"), size=12, color=ft.Colors.GREY),
+                             padding=ft.padding.only(left=10, bottom=10)
+                        ),
+                        ft.Row([
+                            ft.ElevatedButton(
+                                text=self._["check_models"],
+                                icon=ft.icons.REFRESH,
+                                on_click=lambda e: update_model_list_ui()
+                            ),
+                            ft.ElevatedButton(
+                                text=self._["download_models"],
+                                icon=ft.icons.DOWNLOAD,
+                                on_click=download_models
+                            ),
+                        ]),
+                        self.download_status_text,
+                        self.download_progress_bar,
+                    ]
+
+        except Exception as e:
+            logger.error(f"Failed to initialize LocalSTTService or UI: {e}")
+            content_controls = [ft.Text(f"Error initializing local STT service: {e}", color=ft.Colors.RED)]
+
+        return ft.Column(
+            [
+                self.create_setting_group(
+                    self._["local_stt_settings"],
+                    self._["local_stt_tip"],
+                    content_controls,
                     is_mobile,
                 ),
             ],
