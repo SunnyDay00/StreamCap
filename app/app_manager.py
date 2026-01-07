@@ -40,6 +40,10 @@ class App:
             horizontal_alignment=ft.CrossAxisAlignment.START,
         )
 
+
+        from .core.stt.transcription_manager import TranscriptionManager
+        self.transcription_manager = TranscriptionManager(self.config_manager)
+
         self.settings = SettingsPage(self)
         self.language_manager = LanguageManager(self)
         self.language_code = self.settings.language_code

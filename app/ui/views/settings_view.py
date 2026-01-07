@@ -593,6 +593,16 @@ class SettingsPage(PageBase):
                         ]),
                         self.download_status_text,
                         self.download_progress_bar,
+                        
+                        ft.Divider(height=20, thickness=1),
+                        self.create_setting_row(
+                             self._.get("auto_identify_text", "Auto Identify"),
+                             ft.Switch(
+                                value=self.get_config_value("auto_identify_text", False),
+                                data="auto_identify_text",
+                                on_change=self.on_change
+                             )
+                        ),
                     ]
 
 
@@ -638,6 +648,7 @@ class SettingsPage(PageBase):
                         on_change=self.on_change
                     )
                 ),
+
                 self.create_setting_row(
                     f"{self._['ai_api_key']} *",
                     ft.TextField(

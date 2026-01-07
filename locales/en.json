@@ -396,7 +396,8 @@
     "please_enter_api_key": "Please enter API Key first.",
     "connection_success": "Connection successful",
     "connection_failed": "Connection failed",
-    "ai_model_tip": "Select the AI model for text optimization."
+    "ai_model_tip": "Select the AI model for text optimization.",
+    "auto_identify_text": "Auto Identify After Recording",
     "dependencies": "Dependencies",
     "dependency_check": "Dependency Check",
     "path": "Path",

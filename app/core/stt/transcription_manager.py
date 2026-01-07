@@ -72,3 +72,38 @@ class TranscriptionManager:
         txt_path = self._get_txt_path(file_path)
         return os.path.exists(txt_path)
 
+    async def transcribe_file(self, file_path, executor=None):
+        """
+        Transcribe a file using LocalSTTService and optional AI optimization.
+        Returns the transcribed text.
+        """
+        from ...core.stt.local_stt import LocalSTTService
+        from ...core.ai.ai_optimizer import AITextOptimizer
+        import asyncio
+
+        stt_service = LocalSTTService(self.config_manager)
+        is_ready, status = stt_service.check_models_status()
+        if not is_ready:
+             raise Exception("STT Models are not ready/downloaded")
+
+        loop = asyncio.get_running_loop()
+        
+        # 1. Local STT
+        # Use passed executor or default to None (default loop executor)
+        text_result = await loop.run_in_executor(executor, lambda: stt_service.transcribe(file_path))
+        
+        # 2. AI Optimization
+        is_optimized = False
+        try:
+            ai_optimizer = AITextOptimizer(self.config_manager)
+            optimized_text = await ai_optimizer.optimize_text(text_result)
+            if optimized_text != text_result:
+                text_result = optimized_text
+                is_optimized = True
+        except Exception as ai_e:
+            logger.error(f"AI Optimization failed: {ai_e}")
+            # Proceed with original text if AI fails
+
+        self.set_text(file_path, text_result, metadata={"ai_optimized": is_optimized} if is_optimized else None)
+        return text_result
+

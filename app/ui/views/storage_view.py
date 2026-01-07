@@ -28,13 +28,15 @@ class StoragePage(BasePage):
         self.load_language()
         self.app.language_manager.add_observer(self)
         
-        from ...core.stt.transcription_manager import TranscriptionManager
-        self.transcription_manager = TranscriptionManager(self.app.config_manager)
+        self.app.language_manager.add_observer(self)
+        
+        self.transcription_manager = self.app.transcription_manager
 
     async def load(self):
         try:
             self.root_path = self.app.settings.get_video_save_path()
-            self.current_path = self.root_path
+            if self.current_path is None or not os.path.exists(self.current_path):
+                self.current_path = self.root_path
             self.setup_ui()
             await self.update_file_list()
         except Exception as e:
@@ -287,45 +289,14 @@ class StoragePage(BasePage):
         await self.app.page.run_task(self._do_identify_bg, file_path)
 
     async def _do_identify_bg(self, file_path):
-        from ...core.stt.local_stt import LocalSTTService
-        stt_service = LocalSTTService(self.app.config_manager)
-
-        is_ready, status = stt_service.check_models_status()
-        if not is_ready:
-             self.processing_files.discard(file_path)
-             await self.update_file_list()
-             await self.app.snack_bar.show_snack_bar(self._["go_to_configure_models"], bgcolor=ft.Colors.RED)
-             return
-
         try:
-            loop = asyncio.get_running_loop()
-            
-            # 1. Local STT
-            text_result = await loop.run_in_executor(self.executor, lambda: stt_service.transcribe(file_path))
-            
-            # 2. AI Optimization
-            is_optimized = False
-            try:
-                from ...core.ai.ai_optimizer import AITextOptimizer
-                ai_optimizer = AITextOptimizer(self.app.config_manager)
-                
-                optimized_text = await ai_optimizer.optimize_text(text_result)
-                if optimized_text != text_result:
-                    text_result = optimized_text
-                    is_optimized = True
-            except Exception as ai_e:
-                logger.error(f"AI Optimization failed: {ai_e}")
-                # Clean error handling: proceed with original text
-            
-            self.transcription_manager.set_text(file_path, text_result, metadata={"ai_optimized": is_optimized} if is_optimized else None)
-            
-            # Show result or just finish? 
-            # User wants it in background. So no popup.
-            # Just remove from processing and update UI (which will show View History and Export buttons)
-            
+             await self.transcription_manager.transcribe_file(file_path, self.executor)
         except Exception as e:
             logger.error(f"Identify text failed: {e}")
-            await self.app.snack_bar.show_snack_bar(f"{self._['identification_failed']}: {e}", bgcolor=ft.Colors.RED)
+            if "Models are not ready" in str(e):
+                 await self.app.snack_bar.show_snack_bar(self._["go_to_configure_models"], bgcolor=ft.Colors.RED)
+            else:
+                 await self.app.snack_bar.show_snack_bar(f"{self._['identification_failed']}: {e}", bgcolor=ft.Colors.RED)
         finally:
             self.processing_files.discard(file_path)
             await self.update_file_list()

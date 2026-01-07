@@ -472,6 +472,23 @@ class LiveStreamRecorder:
                             self.segment_record,
                             self.user_config.get("convert_to_mp4")
                         )
+                
+                # Auto Identify Text
+                if self.user_config.get("auto_identify_text", False):
+                     # Determine target file for identification (mp4 if converted, else original)
+                     target_file = save_file_path
+                     if self.user_config.get("convert_to_mp4") and self.save_format == "ts":
+                          # If converted processing happened, target the .mp4 file
+                          # This assumes conversion was successful or is happening. 
+                          # Ideally we should wait or queue it?
+                          # If conversion is async background, wait? 
+                          # logic above: `await self.converts_mp4` if not recording_enabled(background) or sync. 
+                          # If sync (default flow above), file is ready.
+                          if self.user_config.get("delete_original"):
+                               target_file = os.path.splitext(save_file_path)[0] + ".mp4"
+                     
+                     logger.info(f"Auto-identifying text for: {target_file}")
+                     self.app.page.run_task(self.app.transcription_manager.transcribe_file, target_file)
 
         except Exception as e:
             logger.error(f"An error occurred during the subprocess execution: {e}")
@@ -754,6 +771,11 @@ class LiveStreamRecorder:
                         False,
                         False
                     )
+            
+            # Auto Identify Text for Direct Download
+            if self.user_config.get("auto_identify_text", False):
+                 logger.info(f"Auto-identifying text for: {save_file_path}")
+                 self.app.page.run_task(self.app.transcription_manager.transcribe_file, save_file_path)
 
             return True
 

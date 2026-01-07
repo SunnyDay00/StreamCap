@@ -397,6 +397,7 @@
     "connection_success": "连接成功",
     "connection_failed": "连接失败",
     "ai_model_tip": "选择用于文本优化的AI模型。推荐使用阿里云Qwen3模型获得更好的中文处理效果。",
+    "auto_identify_text": "录制完成后自动识别",
     "dependencies": "程序依赖",
     "dependency_check": "依赖检查",
     "path": "路径",
