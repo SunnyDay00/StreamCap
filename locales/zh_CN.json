@@ -396,7 +396,20 @@
     "please_enter_api_key": "请先输入API Key。",
     "connection_success": "连接成功",
     "connection_failed": "连接失败",
-    "ai_model_tip": "选择用于文本优化的AI模型。推荐使用阿里云Qwen3模型获得更好的中文处理效果。"
+    "ai_model_tip": "选择用于文本优化的AI模型。推荐使用阿里云Qwen3模型获得更好的中文处理效果。",
+    "dependencies": "程序依赖",
+    "dependency_check": "依赖检查",
+    "path": "路径",
+    "version": "版本",
+    "status": "状态",
+    "installed": "已安装",
+    "missing": "未安装",
+    "builtin": "内置",
+    "system": "系统",
+    "reinstall": "重新安装",
+    "check_update": "检查更新",
+    "install_success": "安装成功",
+    "install_failed": "安装失败"
   },
   "about_page": {
     "about_project": "关于本程序",
@@ -493,7 +506,9 @@
     "identification_result": "识别结果",
     "identification_failed": "识别失败",
     "copy_text": "复制文本",
-    "ai_optimized_label": "AI 优化"
+    "ai_optimized_label": "AI 优化",
+    "view_text": "查看文本",
+    "reidentify_text": "重新识别"
   },
   "video_player": {
     "open_live_room_page": "打开直播间页面",

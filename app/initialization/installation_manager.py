@@ -45,6 +45,34 @@ class InstallationManager:
             await self.update_component_progress(install_func, 0, f"{self._['error']}: {str(e)}")
             self.failed_components.add(install_func)
 
+    async def get_component_status(self, name):
+        """Get detailed status of a component for Settings UI."""
+        if name == "FFmpeg":
+            from ..scripts.ffmpeg_install import check_ffmpeg_installed, get_ffmpeg_path, get_ffmpeg_version_info
+            
+            # This check ensures PATH is updated if found
+            is_installed = await check_ffmpeg_installed()
+            path = get_ffmpeg_path()
+            version = get_ffmpeg_version_info(path) if path else None
+            
+            return {
+                "name": "FFmpeg",
+                "installed": is_installed,
+                "path": path or "Not Found",
+                "version": version or "Unknown",
+                "is_local": path and (self.app.run_path in path) if path else False
+            }
+        elif name == "Node.js":
+             from ..scripts.node_install import check_nodejs_installed
+             is_installed = await check_nodejs_installed()
+             return {
+                 "name": "Node.js",
+                 "installed": is_installed,
+                 "path": "System Path", # Node script doesn't expose path easily yet, can improve later
+                 "version": "Unknown"
+             }
+        return None
+
     async def install_components(self):
         left_btn = self.install_dialog.actions[0]
         right_btn = self.install_dialog.actions[1]

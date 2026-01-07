@@ -310,8 +310,9 @@ class StoragePage(BasePage):
                 ai_optimizer = AITextOptimizer(self.app.config_manager)
                 
                 optimized_text = await ai_optimizer.optimize_text(text_result)
-                text_result = optimized_text
-                is_optimized = True
+                if optimized_text != text_result:
+                    text_result = optimized_text
+                    is_optimized = True
             except Exception as ai_e:
                 logger.error(f"AI Optimization failed: {ai_e}")
                 # Clean error handling: proceed with original text
@@ -455,8 +456,16 @@ class StoragePage(BasePage):
                     )
                     controls_list.append(ft.Row([ft.Container(content=btn, expand=True)]))
                 else:
+                    ext = os.path.splitext(name)[1].lower()
+                    icon_str = "📄"  # Default generic file icon
+                    
+                    if ext in ['.mp3', '.wav', '.m4a', '.flac', '.aac', '.wma']:
+                        icon_str = "🎵"
+                    elif ext in ['.mp4', '.mov', '.mkv', '.flv', '.avi', '.ts', '.webm']:
+                        icon_str = "🎬"
+
                     file_btn = ft.ElevatedButton(
-                        f"📄 {name}",
+                        f"{icon_str} {name}",
                         on_click=lambda e, path=full_path: self.app.page.run_task(self.preview_file, path),
                         style=ft.ButtonStyle(
                             shape=ft.RoundedRectangleBorder(radius=10),
@@ -468,7 +477,7 @@ class StoragePage(BasePage):
                     
                     # Logic to identify if it's a media file that supports transcription
                     ext = os.path.splitext(name)[1].lower()
-                    if ext in ['.mp3', '.wav', '.m4a', '.mp4', '.mov', '.mkv', '.flv']:
+                    if ext in ['.mp3', '.wav', '.m4a', '.mp4', '.mov', '.mkv', '.flv', '.wma', '.aac', '.flac', '.avi', '.ts', '.webm']:
                          
                          if full_path in self.processing_files:
                              # Show processing state
@@ -477,16 +486,17 @@ class StoragePage(BasePage):
                          else:
                              has_transcription = self.transcription_manager.has_text(full_path)
                              
+                             identify_label = self._["reidentify_text"] if has_transcription else self._["identify_text"]
                              identify_btn = ft.ElevatedButton(
-                                self._["identify_text"],
+                                identify_label,
                                 icon=ft.icons.TEXT_SNIPPET,
                                 on_click=lambda e, path=full_path: self.app.page.run_task(self.identify_text, path)
                              )
                              
                              if has_transcription:
                                  history_btn = ft.ElevatedButton(
-                                     self._["view_history"],
-                                     icon=ft.icons.HISTORY,
+                                     self._["view_text"],
+                                     icon=ft.icons.DESCRIPTION,
                                      on_click=lambda e, path=full_path: self.view_history(path)
                                  )
                                  export_btn = ft.IconButton(
@@ -497,9 +507,8 @@ class StoragePage(BasePage):
                                  
                                  row_controls.append(history_btn)
                                  row_controls.append(export_btn)
-                                 row_controls.append(identify_btn) # Re-identify
-                             else:
-                                 row_controls.append(identify_btn)
+                             
+                             row_controls.append(identify_btn)
                          
                     controls_list.append(ft.Row(row_controls))
 

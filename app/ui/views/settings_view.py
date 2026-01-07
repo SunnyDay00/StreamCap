@@ -60,6 +60,7 @@ class SettingsPage(PageBase):
                 ft.Tab(text=self._["cookies_settings"], content=self.tab_cookies),
                 ft.Tab(text=self._["accounts_settings"], content=self.tab_accounts),
                 ft.Tab(text=self._["cloud_model_settings"], content=self.tab_cloud),
+                ft.Tab(text=self._["dependencies"], content=self.create_dependencies_tab()),
             ]
             
             if self.app.page.web:
@@ -695,6 +696,133 @@ class SettingsPage(PageBase):
                 ),
             ],
             spacing=10,
+            scroll=ft.ScrollMode.AUTO,
+        )
+
+    def create_dependencies_tab(self):
+        """Create UI elements for Dependencies settings."""
+        is_mobile = self.app.is_mobile
+        
+        self.dep_status_container = ft.Column()
+        
+        async def check_dependencies(e=None):
+            self.dep_status_container.controls.clear()
+            
+            components = ["FFmpeg", "Node.js"]
+            for comp_name in components:
+                status = await self.app.install_manager.get_component_status(comp_name)
+                if not status:
+                    continue
+                
+                is_installed = status["installed"]
+                color = ft.Colors.GREEN if is_installed else ft.Colors.RED
+                status_text = self._["installed"] if is_installed else self._["missing"]
+                icon = ft.icons.CHECK_CIRCLE if is_installed else ft.icons.CANCEL
+                
+                path_info = status.get("path", "N/A")
+                if status.get("is_local"):
+                     path_info += f" ({self._['builtin']})"
+                else:
+                     path_info += f" ({self._['system']})"
+                     
+                card_content = ft.Column([
+                    ft.Row([
+                        ft.Icon(icon, color=color, size=30),
+                        ft.Text(status["name"], size=20, weight=ft.FontWeight.BOLD, expand=True),
+                        ft.Container(
+                            content=ft.Text(status_text, color=ft.Colors.WHITE, size=12),
+                            bgcolor=color,
+                            padding=5,
+                            border_radius=5
+                        )
+                    ]),
+                    ft.Divider(),
+                    ft.Row([ft.Text(f"{self._['version']}: ", weight=ft.FontWeight.BOLD), ft.Text(status.get("version", "N/A"))]),
+                    ft.Row([ft.Text(f"{self._['path']}: ", weight=ft.FontWeight.BOLD), ft.Text(path_info, size=12, overflow=ft.TextOverflow.ELLIPSIS, expand=True)]),
+                ])
+                
+                action_row = ft.Row([
+                    ft.ElevatedButton(
+                        text=self._["reinstall"] if is_installed else self._["install_now"],
+                        icon=ft.icons.DOWNLOAD,
+                        on_click=lambda e, name=comp_name: self.app.page.run_task(install_dependency, name)
+                    )
+                ], alignment=ft.MainAxisAlignment.END)
+                
+                card_content.controls.append(ft.Divider())
+                card_content.controls.append(action_row)
+
+                self.dep_status_container.controls.append(
+                    ft.Card(
+                        content=ft.Container(
+                            content=card_content,
+                            padding=15
+                        )
+                    )
+                )
+            self.dep_status_container.update()
+
+        async def install_dependency(name):
+            from ...scripts.ffmpeg_install import install_ffmpeg
+            from ...scripts.node_install import install_nodejs
+            
+            install_func = None
+            if name == "FFmpeg":
+                install_func = install_ffmpeg
+            elif name == "Node.js":
+                install_func = install_nodejs
+                
+            if install_func:
+                self.app.page.show_snack_bar(ft.SnackBar(content=ft.Text(f"Starting {name} installation...")))
+                
+                async def progress_callback(progress, status):
+                    if progress_dialog.open:
+                        pb.value = progress
+                        status_txt.value = status
+                        progress_dialog.update()
+
+                pb = ft.ProgressBar(width=300)
+                status_txt = ft.Text("Initializing...")
+                progress_dialog = ft.AlertDialog(
+                    title=ft.Text(f"Installing {name}"),
+                    content=ft.Column([status_txt, pb], height=100, tight=True),
+                    modal=True,
+                )
+                self.app.page.open(progress_dialog)
+                self.app.page.update()
+                
+                try:
+                    res = await install_func(progress_callback)
+                    self.app.page.close(progress_dialog)
+                    if res:
+                        await self.app.snack_bar.show_snack_bar(self._["install_success"], bgcolor=ft.Colors.GREEN)
+                        await check_dependencies()
+                    else:
+                        await self.app.snack_bar.show_snack_bar(self._["install_failed"], bgcolor=ft.Colors.RED)
+                except Exception as ex:
+                    self.app.page.close(progress_dialog)
+                    await self.app.snack_bar.show_snack_bar(f"{self._['install_failed']}: {ex}", bgcolor=ft.Colors.RED)
+
+        self.app.page.run_task(check_dependencies)
+
+        return ft.Column(
+            [
+                self.create_setting_group(
+                    self._["dependency_check"],
+                    self._["program_config"],
+                    [
+                        ft.Container(content=self.dep_status_container),
+                    ],
+                    is_mobile
+                ),
+                 ft.Row([
+                    ft.ElevatedButton(
+                        self._["check_update"],
+                        icon=ft.icons.REFRESH,
+                        on_click=check_dependencies
+                    )
+                 ], alignment=ft.MainAxisAlignment.CENTER)
+            ],
             scroll=ft.ScrollMode.AUTO,
         )
 

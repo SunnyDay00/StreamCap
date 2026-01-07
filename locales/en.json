@@ -397,6 +397,19 @@
     "connection_success": "Connection successful",
     "connection_failed": "Connection failed",
     "ai_model_tip": "Select the AI model for text optimization."
+    "dependencies": "Dependencies",
+    "dependency_check": "Dependency Check",
+    "path": "Path",
+    "version": "Version",
+    "status": "Status",
+    "installed": "Installed",
+    "missing": "Missing",
+    "builtin": "Built-in",
+    "system": "System",
+    "reinstall": "Reinstall",
+    "check_update": "Check Update",
+    "install_success": "Install Success",
+    "install_failed": "Install Failed"
   },
   "about_page": {
     "about_project": "About This Application",
@@ -505,7 +518,9 @@
     "identification_result": "Identification Result",
     "identification_failed": "Identification Failed",
     "copy_text": "Copy Text",
-    "ai_optimized_label": "AI Optimized"
+    "ai_optimized_label": "AI Optimized",
+    "view_text": "View Text",
+    "reidentify_text": "Re-identify"
   },
   "video_player": {
     "open_live_room_page": "Open Live Room Page",

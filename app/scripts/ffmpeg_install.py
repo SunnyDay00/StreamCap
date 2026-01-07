@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 import zipfile
+import shutil
 from pathlib import Path
 
 import httpx
@@ -232,34 +233,74 @@ async def install_ffmpeg(update_progress) -> bool:
     return False
 
 
-def update_env_path():
-    current_env_path = os.environ.get("PATH")
-    if current_platform != "Windows":
-        path_list = ["/usr/bin/", "/usr/local/bin", "/opt/homebrew/bin"]
-        current_env_path_list = current_env_path.split(os.pathsep)
-        env_path = [path for path in path_list if path not in set(current_env_path_list)]
-        ffmpeg_env_path = os.pathsep.join([ffmpeg_path] + env_path + current_env_path_list)
-    else:
-        ffmpeg_env_path = ffmpeg_path + os.pathsep + current_env_path
 
-    os.environ["PATH"] = ffmpeg_env_path
+def get_ffmpeg_path() -> str | None:
+    """
+    Search for ffmpeg executable in the following order:
+    1. 'ffmpeg' directory in execute_dir (recursive search for bin/ffmpeg or straight ffmpeg)
+    2. 'assets/ffmpeg' directory
+    3. System PATH
+    """
+    search_dirs = [
+        os.path.join(execute_dir, "ffmpeg"),
+        os.path.join(execute_dir, "assets", "ffmpeg"),
+    ]
+
+    # 1. Search in local directories
+    exe_name = "ffmpeg.exe" if current_platform == "Windows" else "ffmpeg"
+    
+    for dir_path in search_dirs:
+        if not os.path.exists(dir_path):
+            continue
+            
+        # Walk to find the executable, covering potential 'bin' subfolders from zip extraction
+        for root, _, files in os.walk(dir_path):
+            if exe_name in files:
+                return os.path.join(root, exe_name)
+
+    # 2. Search in PATH (fallback)
+    return shutil.which("ffmpeg")
+
+
+def get_ffmpeg_version_info(path: str) -> str | None:
+    """Get version string from ffmpeg executable."""
+    try:
+        startupinfo = get_startup_info()
+        result = subprocess.run([path, "-version"], capture_output=True, startupinfo=startupinfo, text=True)
+        if result.returncode == 0:
+            # First line usually contains version info, e.g., "ffmpeg version n4.4 ..."
+            return result.stdout.splitlines()[0]
+    except Exception as e:
+        logger.error(f"Failed to get ffmpeg version: {e}")
+    return None
 
 
 async def check_ffmpeg_installed() -> bool:
     try:
-        update_env_path()
-        result = subprocess.run(["ffmpeg", "-version"], capture_output=True, startupinfo=startupinfo, text=True)
-        version_info = result.stdout.strip()
-        if result.returncode == 0 and version_info:
-            logger.info(". ".join(version_info.splitlines()[:2]))
-            return True
-        else:
-            logger.debug(result.stderr.strip())
-    except FileNotFoundError as e:
-        logger.info(e)
-    except OSError as e:
-        logger.error(f"OSError occurred: {e}.")
-        logger.error("Please delete the ffmpeg and try to download and install again.")
+        path = get_ffmpeg_path()
+        if path:
+            # Update env path to ensure other processes can find this local ffmpeg if needed
+            # But primarily we should return True
+            # Also verify it runs
+            if get_ffmpeg_version_info(path):
+                # Ensure the directory of the found ffmpeg is in PATH for legacy support
+                ffmpeg_dir = os.path.dirname(path)
+                if ffmpeg_dir not in os.environ["PATH"]:
+                     os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ["PATH"]
+                return True
     except Exception as e:
-        logger.error(f"An unexpected error occurred: {e}")
+        logger.error(f"Error checking ffmpeg: {e}")
     return False
+
+
+def update_env_path():
+    """
+    Deprecated: Path handling is now done dynamically in check_ffmpeg_installed or get_ffmpeg_path callers.
+    Kept for compatibility if needed, but implementation updated to allow finding it.
+    """
+    path = get_ffmpeg_path()
+    if path:
+         ffmpeg_dir = os.path.dirname(path)
+         if ffmpeg_dir not in os.environ["PATH"]:
+             os.environ["PATH"] = ffmpeg_dir + os.pathsep + os.environ["PATH"]
+
