@@ -61,6 +61,15 @@ class TranscriptionManager:
                         logger.info(f"Removed stale AI transcription: {ai_path}")
                     except Exception as e:
                         logger.error(f"Failed to remove stale AI file {ai_path}: {e}")
+            else:
+                 # If saving AI version, user requests to remove the original RAW version to avoid duplication/confusion
+                raw_path = self._get_txt_path(file_path, ai_optimized=False)
+                if os.path.exists(raw_path):
+                    try:
+                        os.remove(raw_path)
+                        logger.info(f"Removed stale RAW transcription: {raw_path}")
+                    except Exception as e:
+                        logger.warning(f"Failed to remove stale RAW file {raw_path}: {e}")
 
             # Note: We don't delete RAW file when saving AI file, as having a backup/base is fine.
             # And get_text prefers AI anyway.

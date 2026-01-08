@@ -8,7 +8,9 @@ python-dotenv>=1.0.1
 pystray>=0.19.5
 plyer>=2.1.0
 funasr>=1.0.0
-modelscope>=1.10.0
+modelscope>=1.19.0
 torch
 torchaudio
 opencv-python>=4.10.0
+onnx
+onnxruntime

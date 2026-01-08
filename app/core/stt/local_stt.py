@@ -100,61 +100,62 @@ class LocalSTTService:
         logger.info("Local STT pipeline loaded.")
 
     def process_audio_separation(self, audio_path: str) -> str:
-        """Run MossFormer2 to separate vocals."""
+        """Run MossFormer2 to separate vocals using ONNX."""
         try:
-            from modelscope.pipelines import pipeline
-            from modelscope.utils.constant import Tasks
-            import soundfile as sf
+            import onnxruntime as ort
             import numpy as np
+            import soundfile as sf
+            import librosa
             
+            model_id = MODELS["enhance"]
+            model_name = model_id.split("/")[-1]
+            model_dir = os.path.join(self.models_dir, model_name)
+            onnx_model_path = os.path.join(model_dir, "simple_model.onnx")
+            
+            if not os.path.exists(onnx_model_path):
+                 logger.error(f"ONNX model not found at {onnx_model_path}")
+                 return audio_path
+
             if not self.separation_pipeline:
-                 model_id = MODELS["enhance"]
-                 # Locate model dir if downloaded
-                 model_name = model_id.split("/")[-1]
-                 model_dir = os.path.join(self.models_dir, model_name)
-                 
-                 logger.info(f"Loading separation model from {model_dir}...")
-                 # Use local path if exists, else ID (which might trigger download if not handled, but we rely on download_models)
-                 load_path = model_dir if os.path.exists(model_dir) else model_id
-                 
-                 self.separation_pipeline = pipeline(
-                     task=Tasks.audio_separation,
-                     model=load_path
-                 )
+                 logger.info(f"Loading ONNX model from {onnx_model_path}...")
+                 self.separation_pipeline = ort.InferenceSession(onnx_model_path)
             
-            logger.info(f"Running MossFormer2 separation on {audio_path}...")
+            session = self.separation_pipeline
+
+            logger.info(f"Running MossFormer2 separation (ONNX) on {audio_path}...")
             
-            # Run inference
-            # result usually contains 'output_pcm_list' (list of numpy arrays)
-            result = self.separation_pipeline(audio_in=audio_path)
+            # Load and Resample to 16k using librosa
+            # mono=True ensures 1 channel
+            audio_data, _ = librosa.load(audio_path, sr=16000, mono=True)
             
-            if 'output_pcm_list' in result:
-                pcm_list = result['output_pcm_list']
-                if len(pcm_list) > 0:
-                    # Usually speaker 0 is the target or one of them. 
-                    # For separation, we might have multiple. We'll pick index 0 for now.
-                    # Or we should check if there's a convention.
-                    # Assuming index 0 is the primary source/speech.
-                    enhanced_pcm = pcm_list[0]
-                    
-                    # Ensure it's in the right shape for soundfile (samples, channels)
-                    # result might be (1, samples) or (samples,).
-                    if len(enhanced_pcm.shape) == 2 and enhanced_pcm.shape[0] < enhanced_pcm.shape[1]:
-                         enhanced_pcm = enhanced_pcm.T
-                    
-                    # Save to temp file
-                    base, ext = os.path.splitext(audio_path)
-                    output_path = f"{base}_enhanced.wav"
-                    
-                    # Get sample rate - pipeline usually matches input or 16000? 
-                    # MossFormer2 16k model outputs 16k.
-                    sf.write(output_path, enhanced_pcm, 16000)
-                    
-                    logger.info(f"Separation complete. Saved to: {output_path}")
-                    return output_path
+            # Input preparation: Model expects (Batch, Time) -> (1, samples)
+            input_tensor = audio_data[np.newaxis, :].astype(np.float32)
+
+            input_name = session.get_inputs()[0].name
             
-            logger.warning("No audio data found in separation result.")
-            return audio_path
+            # Inference
+            outputs = session.run(None, {input_name: input_tensor})
+            est_source = outputs[0] # Expected shape: (Batch, Time, Sources)
+            
+            # Extract dominant speaker (Index 0)
+            # Note: MossFormer2 separation usually outputs 2 sources. 
+            # We assume source 0 is the desired one or we just pick the first one.
+            ns = 0
+            signal = est_source[0, :, ns]
+            
+            # Normalize
+            max_val = np.abs(signal).max()
+            if max_val > 0:
+                signal = signal / max_val * 0.9
+            
+            # Save
+            base, ext = os.path.splitext(audio_path)
+            output_path = f"{base}_enhanced.wav"
+            
+            sf.write(output_path, signal, 16000)
+            
+            logger.info(f"Separation complete. Saved to: {output_path}")
+            return output_path
 
         except Exception as e:
             logger.error(f"Vocal separation failed: {e}")
@@ -172,7 +173,7 @@ class LocalSTTService:
             
             # Check for Vocal Enhancement
             enhanced_temp_path = None
-            if self.config_manager.get("enable_vocal_enhancement", False):
+            if self.config_manager.get_config_value("enable_vocal_enhancement", False):
                  try:
                      enhanced_path = self.process_audio_separation(audio_path)
                      if enhanced_path != audio_path:

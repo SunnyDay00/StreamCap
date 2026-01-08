@@ -136,8 +136,8 @@ class LiveStreamRecorder:
     def _get_save_path(self, filename: str, use_direct_download: bool = False) -> str:
         suffix = self.save_format
         suffix = "_%03d." + suffix if self.segment_record and not use_direct_download else "." + suffix
-        save_file_path = os.path.join(self.output_dir, filename + suffix).replace(" ", "_")
-        return save_file_path.replace("\\", "/")
+        save_file_path = os.path.join(self.output_dir, filename + suffix).replace(" ", "_").replace("\\", "/")
+        return save_file_path + ".part"
 
     @staticmethod
     def _clean_and_truncate_title(title: str) -> str | None:
@@ -436,7 +436,20 @@ class LiveStreamRecorder:
 
                 await self.recheck_live_status()
 
-                if os.path.exists(save_file_path) and os.path.getsize(save_file_path) > 0:
+                # Check for file existence (handle segmented % pattern)
+                file_exists = False
+                if "%" in save_file_path:
+                     dir_path = os.path.dirname(save_file_path)
+                     base_name = os.path.basename(save_file_path).split("%")[0]
+                     if os.path.exists(dir_path):
+                         for f in os.listdir(dir_path):
+                             if f.startswith(base_name) and os.path.getsize(os.path.join(dir_path, f)) > 0:
+                                 file_exists = True
+                                 break
+                else:
+                    file_exists = os.path.exists(save_file_path) and os.path.getsize(save_file_path) > 0
+
+                if file_exists:
                     self.app.page.run_task(
                         self._post_process_recording,
                         save_file_path,
@@ -469,8 +482,70 @@ class LiveStreamRecorder:
 
     async def _post_process_recording(self, save_file_path, record_name, save_type, script_command):
         """Unified post-processing: Convert -> Script -> Identify"""
-        final_file_path = save_file_path
         
+    async def _post_process_recording(self, save_file_path, record_name, save_type, script_command):
+        """Unified post-processing: Convert -> Script -> Identify"""
+        
+        # 0. Handle .part or Segmented renaming
+        is_segmented = "%" in save_file_path
+        is_part = save_file_path.endswith(".part")
+        final_file_path = save_file_path
+
+        if is_segmented:
+             # Determine the real pattern (remove .part if present)
+             final_pattern = save_file_path[:-5] if is_part else save_file_path
+             
+             dir_path = os.path.dirname(save_file_path)
+             if is_part:
+                 base_name_pattern = os.path.basename(save_file_path)[:-5].split("%")[0]
+             else:
+                 base_name_pattern = os.path.basename(save_file_path).split("%")[0]
+             
+             if os.path.exists(dir_path):
+                 found_files = []
+                 for f in os.listdir(dir_path):
+                     if f.startswith(base_name_pattern):
+                         full_p = os.path.join(dir_path, f)
+                         if is_part and f.endswith(".part"):
+                             # Rename part to real
+                             real_p = full_p[:-5]
+                             try:
+                                 os.rename(full_p, real_p)
+                                 logger.info(f"Restored segment part: {f} -> {os.path.basename(real_p)}")
+                                 found_files.append(real_p)
+                             except Exception as e:
+                                 logger.error(f"Failed to restore segment {f}: {e}")
+                         
+                 # Update save_file_path to the 'final' pattern (without .part) for next steps
+                 save_file_path = final_pattern
+                 final_file_path = final_pattern
+             else:
+                 logger.warning(f"Directory missing for segmented: {save_file_path}")
+                 return
+
+        elif is_part:
+             # Single file .part restore
+             real_path = save_file_path[:-5]
+             if os.path.exists(save_file_path):
+                 try:
+                     os.rename(save_file_path, real_path)
+                     logger.info(f"Restored temp file: {save_file_path} -> {real_path}")
+                     save_file_path = real_path
+                     final_file_path = real_path
+                 except Exception as e:
+                     logger.error(f"Failed to restore .part file: {e}")
+                     return
+             else:
+                 # Check if real path exists (maybe handled externally?)
+                 if os.path.exists(real_path):
+                      save_file_path = real_path
+                      final_file_path = real_path
+                 else:
+                      logger.warning(f".part file missing: {save_file_path}")
+                      return
+        else:
+             final_file_path = save_file_path
+
         # 1. Convert to MP4
         if self.user_config.get("convert_to_mp4") and save_type == "ts":
             if self.segment_record:
@@ -478,25 +553,30 @@ class LiveStreamRecorder:
                 prefix = os.path.basename(save_file_path).rsplit("_", maxsplit=1)[0]
                 for path in file_paths:
                     if prefix in path:
-                         await self._do_converts_mp4(path, self.user_config["delete_original"])
-                         # Note: Segmented recording identification is complex, targeting the last one or all?
-                         # For now, we skip auto-identify on segmented checks or just identify the last one.
+                         await self._do_converts_mp4(path, self.user_config.get("delete_original", True))
+                         # Update final_path to mp4 for identification? 
+                         # Identifying a segment is weird. We'll skip or just use last.
                          final_file_path = os.path.splitext(path)[0] + ".mp4"
             else:
-                await self._do_converts_mp4(save_file_path, self.user_config["delete_original"])
+                await self._do_converts_mp4(save_file_path, self.user_config.get("delete_original", True))
                 final_file_path = os.path.splitext(save_file_path)[0] + ".mp4"
 
         # 1.5 Calculate Duration and Rename
         # User requested to write duration to filename.
         # 1.5 Calculate Duration and Rename
         # User requested to write duration to filename.
+        logger.info(f"Starting duration check for: {final_file_path}")
         if os.path.exists(final_file_path):
             duration_str = utils.get_media_duration(final_file_path)
             if duration_str:
                 # Sanitize duration string for Windows filename (replace : with - or similar if needed)
                 # Assuming utils returns HH:MM:SS, we want HHhMMmSSs or HH-MM-SS
-                safe_duration = duration_str.replace(":", "h", 1).replace(":", "m", 1) + "s"
-                safe_duration = safe_duration.replace(":", "-") # fallback
+                if ":" in duration_str:
+                    # Input: HH:MM:SS -> Output: HHhMMmSSs
+                    safe_duration = duration_str.replace(":", "h", 1).replace(":", "m", 1) + "s"
+                    safe_duration = safe_duration.replace(":", "-") # fallback
+                else:
+                    safe_duration = duration_str
                 
                 logger.info(f"Calculated duration: {duration_str} -> {safe_duration}")
                 
@@ -821,8 +901,6 @@ class LiveStreamRecorder:
             if not self.app.recording_enabled:
                 self.recording.status_info = RecordingStatus.NOT_RECORDING_SPACE
                 self.app.page.run_task(self.stop_recording_notify)
-
-            await self.recheck_live_status()
 
             await self.recheck_live_status()
 
