@@ -26,7 +26,7 @@ class StoragePage(BasePage):
         self.file_list = None
         self._ = {}
         self.executor = ThreadPoolExecutor(max_workers=4)
-        self.processing_files = set() # Track files currently being processed
+        # self.processing_files = set() # Track files currently being processed -> Moved to TranscriptionManager
         self.load_language()
         self.app.language_manager.add_observer(self)
         
@@ -164,8 +164,8 @@ class StoragePage(BasePage):
              return
 
         # Mark all as processing
-        for path in files_to_process:
-            self.processing_files.add(path)
+        # for path in files_to_process:
+        #     self.processing_files.add(path)
         
         await self.update_file_list()
         
@@ -177,7 +177,7 @@ class StoragePage(BasePage):
             # Check models first (quick check)
             is_ready, _ = stt_service.check_models_status()
             if not is_ready:
-                 self.processing_files.clear()
+                 # self.processing_files.clear()
                  await self.update_file_list()
                  await self.app.snack_bar.show_snack_bar(self._["go_to_configure_models"], bgcolor=ft.Colors.RED)
                  return
@@ -209,8 +209,9 @@ class StoragePage(BasePage):
                 except Exception as e:
                     logger.error(f"Failed to transcribe {file_path}: {e}")
                 finally:
-                    if file_path in self.processing_files:
-                        self.processing_files.remove(file_path)
+                    # if file_path in self.processing_files:
+                    #     self.processing_files.remove(file_path)
+                    pass
                     
                     # Only update UI if the page is still active/mounted
                     if self.app.current_page == self:
@@ -270,6 +271,18 @@ class StoragePage(BasePage):
         default_name = f"{dir_name}.txt"
         file_picker.save_file(allowed_extensions=["txt"], file_name=default_name)
 
+    def did_mount(self):
+        super().did_mount()
+        self.app.page.pubsub.subscribe(self.on_message)
+
+    def will_unmount(self):
+        self.app.page.pubsub.unsubscribe_all(self.on_message)
+        super().will_unmount()
+
+    def on_message(self, message):
+        if message == "storage_update":
+            if self.page:
+                 self.app.page.run_task(self.update_file_list)
     async def _on_batch_export_result(self, e: ft.FilePickerResultEvent, content: str):
         if e.path:
             try:
@@ -308,7 +321,7 @@ class StoragePage(BasePage):
     
     async def _start_identification_task(self, file_path):
         # Add to processing and update UI to show progress row
-        self.processing_files.add(file_path)
+        # self.processing_files.add(file_path)
         await self.update_file_list()
         
         # Run actual logic
@@ -324,7 +337,7 @@ class StoragePage(BasePage):
             else:
                  await self.app.snack_bar.show_snack_bar(f"{self._['identification_failed']}: {e}", bgcolor=ft.Colors.RED)
         finally:
-            self.processing_files.discard(file_path)
+            # self.processing_files.discard(file_path)
             await self.update_file_list()
 
     def show_transcription_result(self, file_path):
@@ -544,7 +557,7 @@ class StoragePage(BasePage):
                     if self._is_supported_media(name):
                          
                          action_buttons = []
-                         if full_path in self.processing_files:
+                         if self.transcription_manager.is_processing(full_path):
                              # Show processing state
                              # For processing, we can put it in the same action container or separate?
                              # Let's put in action container to keep alignment.

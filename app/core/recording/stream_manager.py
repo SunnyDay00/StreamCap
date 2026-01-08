@@ -489,7 +489,12 @@ class LiveStreamRecorder:
         # 0. Handle .part or Segmented renaming
         is_segmented = "%" in save_file_path
         is_part = save_file_path.endswith(".part")
-        final_file_path = save_file_path
+        is_part = save_file_path.endswith(".part")
+        # Initialize list to track all final files for processing
+        final_file_paths = []
+        
+        # Start with the main path logic
+        current_processing_path = save_file_path
 
         if is_segmented:
              # Determine the real pattern (remove .part if present)
@@ -517,8 +522,9 @@ class LiveStreamRecorder:
                                  logger.error(f"Failed to restore segment {f}: {e}")
                          
                  # Update save_file_path to the 'final' pattern (without .part) for next steps
+                 # Update save_file_path to the 'final' pattern (without .part) for next steps
                  save_file_path = final_pattern
-                 final_file_path = final_pattern
+                 current_processing_path = final_pattern
              else:
                  logger.warning(f"Directory missing for segmented: {save_file_path}")
                  return
@@ -531,7 +537,7 @@ class LiveStreamRecorder:
                      os.rename(save_file_path, real_path)
                      logger.info(f"Restored temp file: {save_file_path} -> {real_path}")
                      save_file_path = real_path
-                     final_file_path = real_path
+                     current_processing_path = real_path
                  except Exception as e:
                      logger.error(f"Failed to restore .part file: {e}")
                      return
@@ -539,12 +545,13 @@ class LiveStreamRecorder:
                  # Check if real path exists (maybe handled externally?)
                  if os.path.exists(real_path):
                       save_file_path = real_path
-                      final_file_path = real_path
+                      current_processing_path = real_path
                  else:
                       logger.warning(f".part file missing: {save_file_path}")
                       return
         else:
-             final_file_path = save_file_path
+             current_processing_path = save_file_path
+             final_file_paths = [current_processing_path]
 
         # 1. Convert to MP4
         if self.user_config.get("convert_to_mp4") and save_type == "ts":
@@ -554,48 +561,56 @@ class LiveStreamRecorder:
                 for path in file_paths:
                     if prefix in path:
                          await self._do_converts_mp4(path, self.user_config.get("delete_original", True))
-                         # Update final_path to mp4 for identification? 
-                         # Identifying a segment is weird. We'll skip or just use last.
-                         final_file_path = os.path.splitext(path)[0] + ".mp4"
+                         # Add converted path to list
+                         final_file_paths.append(os.path.splitext(path)[0] + ".mp4")
+                
+                # Remove original TS path if replaced by multiple MP4s (or just update list)
+                if current_processing_path in final_file_paths:
+                    final_file_paths.remove(current_processing_path)
+                    
             else:
                 await self._do_converts_mp4(save_file_path, self.user_config.get("delete_original", True))
-                final_file_path = os.path.splitext(save_file_path)[0] + ".mp4"
+                # Update the single path in list
+                final_file_paths = [os.path.splitext(save_file_path)[0] + ".mp4"]
 
         # 1.5 Calculate Duration and Rename
         # User requested to write duration to filename.
-        # 1.5 Calculate Duration and Rename
-        # User requested to write duration to filename.
-        logger.info(f"Starting duration check for: {final_file_path}")
-        if os.path.exists(final_file_path):
-            duration_str = utils.get_media_duration(final_file_path)
-            if duration_str:
-                # Sanitize duration string for Windows filename (replace : with - or similar if needed)
-                # Assuming utils returns HH:MM:SS, we want HHhMMmSSs or HH-MM-SS
-                if ":" in duration_str:
-                    # Input: HH:MM:SS -> Output: HHhMMmSSs
-                    safe_duration = duration_str.replace(":", "h", 1).replace(":", "m", 1) + "s"
-                    safe_duration = safe_duration.replace(":", "-") # fallback
+        processed_paths = []
+        for f_path in final_file_paths:
+            logger.info(f"Starting duration check for: {f_path}")
+            if os.path.exists(f_path):
+                duration_str = utils.get_media_duration(f_path)
+                if duration_str:
+                     # ... (sanitize logic same as before) ...
+                     if ":" in duration_str:
+                        safe_duration = duration_str.replace(":", "h", 1).replace(":", "m", 1) + "s"
+                        safe_duration = safe_duration.replace(":", "-")
+                     else:
+                        safe_duration = duration_str
+                        
+                     dir_name = os.path.dirname(f_path)
+                     file_name = os.path.basename(f_path)
+                     name, ext = os.path.splitext(file_name)
+                     
+                     # Remove existing duration pattern if re-running? 
+                     # Assume clean name or append. Logic below appends.
+                     
+                     new_name = f"{name}_{safe_duration}{ext}"
+                     new_path = os.path.join(dir_name, new_name)
+                     
+                     try:
+                        os.rename(f_path, new_path)
+                        logger.info(f"Renamed file with duration: {f_path} -> {new_path}")
+                        processed_paths.append(new_path)
+                     except Exception as e:
+                        logger.error(f"Failed to rename file with duration: {e}")
+                        processed_paths.append(f_path) # Keep original if fail
                 else:
-                    safe_duration = duration_str
-                
-                logger.info(f"Calculated duration: {duration_str} -> {safe_duration}")
-                
-                # Rename file
-                dir_name = os.path.dirname(final_file_path)
-                file_name = os.path.basename(final_file_path)
-                name, ext = os.path.splitext(file_name)
-                
-                new_name = f"{name}_{safe_duration}{ext}"
-                new_path = os.path.join(dir_name, new_name)
-                
-                try:
-                    os.rename(final_file_path, new_path)
-                    logger.info(f"Renamed file with duration: {final_file_path} -> {new_path}")
-                    final_file_path = new_path
-                except Exception as e:
-                    logger.error(f"Failed to rename file with duration: {e}")
+                     processed_paths.append(f_path)
             else:
-                logger.warning("Could not calculate duration, skipping rename.")
+                processed_paths.append(f_path)
+        
+        final_file_paths = processed_paths
 
         # 2. Custom Script
         if self.user_config.get("execute_custom_script") and script_command:
@@ -610,30 +625,34 @@ class LiveStreamRecorder:
             )
 
         # 3. Auto Identify
+        # 3. Auto Identify (Loop over all files)
         if self.user_config.get("auto_identify_text", False):
-             # Ensure file exists before trying to identify
-             if os.path.exists(final_file_path):
-                 logger.info(f"Preparing to auto-identify: {final_file_path}")
-                 
-                 # Integrity Check
-                 is_valid = await self.check_file_integrity(final_file_path)
-                 
-                 # Retry once if failed? Or just proceed if valid.
-                 if not is_valid:
-                      logger.warning(f"File integrity check failed, waiting 3s to retry... {final_file_path}")
-                      await asyncio.sleep(3)
-                      is_valid = await self.check_file_integrity(final_file_path)
+             for final_file_path in final_file_paths:
+                 if os.path.exists(final_file_path):
+                     logger.info(f"Preparing to auto-identify: {final_file_path}")
+                     
+                     is_valid = await self.check_file_integrity(final_file_path)
+                     
+                     if not is_valid:
+                          logger.warning(f"File integrity check failed, waiting 3s to retry... {final_file_path}")
+                          await asyncio.sleep(3)
+                          is_valid = await self.check_file_integrity(final_file_path)
 
-                 if is_valid:
-                     logger.info(f"File integrity verified. Auto-identifying: {final_file_path}")
-                     try:
-                        await self.app.transcription_manager.transcribe_file(final_file_path)
-                     except Exception as e:
-                        logger.error(f"Auto-identify failed: {e}")
+                     if is_valid:
+                         logger.info(f"File integrity verified. Auto-identifying: {final_file_path}")
+                         try:
+                            # Trigger generic storage update (start state)
+                            self.app.page.pubsub.send_all("storage_update")
+                            await self.app.transcription_manager.transcribe_file(final_file_path)
+                         except Exception as e:
+                            logger.error(f"Auto-identify failed: {e}")
+                         finally:
+                            # Trigger generic storage update (end state)
+                            self.app.page.pubsub.send_all("storage_update") 
+                     else:
+                         logger.error(f"Skipping auto-identify: File integrity check failed. {final_file_path}")
                  else:
-                     logger.error(f"Skipping auto-identify: File integrity check failed or timed out. {final_file_path}")
-             else:
-                 logger.warning(f"Skipping auto-identify: File not found {final_file_path}")
+                     logger.warning(f"Skipping auto-identify: File not found {final_file_path}")
 
     async def converts_mp4(self, converts_file_path: str, is_original_delete: bool = True) -> None:
         """Asynchronous transcoding method, can be added to the background service to continue execution"""

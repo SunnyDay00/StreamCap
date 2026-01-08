@@ -4,7 +4,11 @@ from ...utils.logger import logger
 class TranscriptionManager:
     def __init__(self, config_manager):
         self.config_manager = config_manager
+        self.processing_files = set()
         # No longer loading JSON data
+    
+    def is_processing(self, file_path):
+        return file_path in self.processing_files
 
     AI_SUFFIX = "_AI"
 
@@ -109,33 +113,38 @@ class TranscriptionManager:
         Transcribe a file using LocalSTTService and optional AI optimization.
         Returns the transcribed text.
         """
-        from ...core.stt.local_stt import LocalSTTService
-        from ...core.ai.ai_optimizer import AITextOptimizer
-        import asyncio
-
-        stt_service = LocalSTTService(self.config_manager)
-        is_ready, status = stt_service.check_models_status()
-        if not is_ready:
-             raise Exception("STT Models are not ready/downloaded")
-
-        loop = asyncio.get_running_loop()
-        
-        # 1. Local STT
-        # Use passed executor or default to None (default loop executor)
-        text_result = await loop.run_in_executor(executor, lambda: stt_service.transcribe(file_path))
-        
-        # 2. AI Optimization
-        is_optimized = False
+        self.processing_files.add(file_path)
         try:
-            ai_optimizer = AITextOptimizer(self.config_manager)
-            optimized_text = await ai_optimizer.optimize_text(text_result)
-            if optimized_text != text_result:
-                text_result = optimized_text
-                is_optimized = True
-        except Exception as ai_e:
-            logger.error(f"AI Optimization failed: {ai_e}")
-            # Proceed with original text if AI fails
+            from ...core.stt.local_stt import LocalSTTService
+            from ...core.ai.ai_optimizer import AITextOptimizer
+            import asyncio
 
-        self.set_text(file_path, text_result, metadata={"ai_optimized": is_optimized} if is_optimized else None)
-        return text_result
+            stt_service = LocalSTTService(self.config_manager)
+            is_ready, status = stt_service.check_models_status()
+            if not is_ready:
+                 raise Exception("STT Models are not ready/downloaded")
+
+            loop = asyncio.get_running_loop()
+            
+            # 1. Local STT
+            # Use passed executor or default to None (default loop executor)
+            text_result = await loop.run_in_executor(executor, lambda: stt_service.transcribe(file_path))
+            
+            # 2. AI Optimization
+            is_optimized = False
+            try:
+                ai_optimizer = AITextOptimizer(self.config_manager)
+                optimized_text = await ai_optimizer.optimize_text(text_result)
+                if optimized_text != text_result:
+                    text_result = optimized_text
+                    is_optimized = True
+            except Exception as ai_e:
+                logger.error(f"AI Optimization failed: {ai_e}")
+                # Proceed with original text if AI fails
+
+            self.set_text(file_path, text_result, metadata={"ai_optimized": is_optimized} if is_optimized else None)
+            return text_result
+        finally:
+            if file_path in self.processing_files:
+                self.processing_files.discard(file_path)
 
