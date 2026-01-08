@@ -486,6 +486,13 @@
   "storage_page": {
     "file_duration": "Duration: ",
     "unknown_duration": "Unknown",
+    "click_to_update_duration": "Click to update duration",
+    "calculating_duration": "Calculating duration...",
+    "duration_update_success": "Duration updated successfully",
+    "duration_update_failed": "Failed to update duration",
+    "identify_all_durations": "Identify All Durations",
+    "identifying_durations": "Identifying durations...",
+    "duration_identification_complete": "Duration identification complete",
     "unit_h": "h ",
     "unit_m": "m ",
     "unit_s": "s",

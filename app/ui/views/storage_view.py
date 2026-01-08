@@ -1,6 +1,7 @@
 import asyncio
 import os
 import re
+from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
 import flet as ft
@@ -58,6 +59,7 @@ class StoragePage(BasePage):
             controls=[
                 ft.ElevatedButton(self._["identify_all"], icon=ft.icons.ALL_INCLUSIVE, on_click=self.on_identify_all),
                 ft.ElevatedButton(self._["identify_remaining"], icon=ft.icons.FILTER_ALT, on_click=self.on_identify_remaining),
+                ft.ElevatedButton(self._.get("identify_all_durations", "识别全部时长"), icon=ft.icons.TIMER, on_click=self.on_identify_durations),
                 ft.ElevatedButton(self._["batch_export"], icon=ft.icons.SAVE_ALT, on_click=self.on_batch_export),
             ],
             spacing=10,
@@ -135,14 +137,22 @@ class StoragePage(BasePage):
     def on_batch_export(self, e):
         self.app.page.run_task(self.batch_export)
 
+    def on_identify_durations(self, e):
+        self.app.page.run_task(self.batch_identify_durations)
+
+
+    def _is_supported_media(self, filename: str) -> bool:
+        ext = os.path.splitext(filename)[1].lower()
+        return ext in ['.mp3', '.wav', '.m4a', '.mp4', '.mov', '.mkv', 
+                       '.flv', '.wma', '.aac', '.flac', '.avi', '.ts', '.webm']
+
     async def batch_identify(self, process_all=False):
         files_to_process = []
         try:
              with os.scandir(self.current_path) as it:
                 for entry in it:
                     if entry.is_file():
-                        ext = os.path.splitext(entry.name)[1].lower()
-                        if ext in ['.mp3', '.wav', '.m4a', '.mp4', '.mov', '.mkv', '.flv']:
+                        if self._is_supported_media(entry.name):
                             if process_all or not self.transcription_manager.has_text(entry.path):
                                 files_to_process.append(entry.path)
         except Exception as e:
@@ -223,11 +233,19 @@ class StoragePage(BasePage):
             with os.scandir(self.current_path) as it:
                 entries = sorted(it, key=lambda e: e.name)
                 for entry in entries:
-                    if entry.is_file():
-                        text = self.transcription_manager.get_text(entry.path)
-                        if text:
-                            has_content = True
-                            export_content += f"=== {entry.name} ===\n{text}\n\n"
+                    # Specific user request: Only read TXT files in current directory
+                    if entry.is_file() and entry.name.lower().endswith(".txt"):
+                        try:
+                            # Avoid reading the export file itself if typically named 'export...'
+                            # But here we read everything that is .txt.
+                            with open(entry.path, "r", encoding="utf-8") as f:
+                                text = f.read()
+                                if text.strip():
+                                    has_content = True
+                                    export_content += f"=== {entry.name} ===\n{text}\n\n"
+                        except Exception as e:
+                            logger.error(f"Error reading {entry.name}: {e}")
+                            
         except Exception as e:
             logger.error(f"Error gathering texts: {e}")
             return
@@ -236,6 +254,9 @@ class StoragePage(BasePage):
             await self.app.snack_bar.show_snack_bar(self._["no_transcriptions_to_export"])
             return
 
+        # Fix: Ensure content is treated as string and file picker is properly awaited/handled
+        # Note: FilePicker result event is async, but save_file is non-blocking to UI.
+        
         file_picker = ft.FilePicker()
         def on_result(e):
              self.app.page.run_task(self._on_batch_export_result, e, export_content)
@@ -243,7 +264,11 @@ class StoragePage(BasePage):
         file_picker.on_result = on_result
         self.app.page.overlay.append(file_picker)
         self.app.page.update()
-        file_picker.save_file(allowed_extensions=["txt"], file_name="batch_export.txt")
+        
+        # Use directory name as default filename
+        dir_name = os.path.basename(self.current_path) or "export"
+        default_name = f"{dir_name}.txt"
+        file_picker.save_file(allowed_extensions=["txt"], file_name=default_name)
 
     async def _on_batch_export_result(self, e: ft.FilePickerResultEvent, content: str):
         if e.path:
@@ -399,8 +424,8 @@ class StoragePage(BasePage):
                     return []
                 with os.scandir(self.current_path) as it:
                     for entry in it:
-                        # Filter out .txt and .meta files created by transcription
-                        if entry.is_file() and (entry.name.lower().endswith(".txt") or entry.name.lower().endswith(".meta")):
+                        # Filter out .txt, .meta, and .part files
+                        if entry.is_file() and (entry.name.lower().endswith(".txt") or entry.name.lower().endswith(".meta") or entry.name.lower().endswith(".part")):
                             continue
                         _items.append((entry.name, entry.is_dir(), entry.path))
                 return sorted(_items, key=lambda x: (-x[1], x[0].lower()))
@@ -458,7 +483,7 @@ class StoragePage(BasePage):
                     row_controls = [ft.Container(content=file_btn, expand=True)]
                     
                     # Add Duration Display for media files
-                    if ext in ['.mp3', '.wav', '.m4a', '.mp4', '.mov', '.mkv', '.flv', '.wma', '.aac', '.flac', '.avi', '.ts', '.webm']:
+                    if self._is_supported_media(name):
                          duration_str = self._extract_duration(name)
                          
                          unknown_label = self._.get("unknown_duration", "Unknown")
@@ -489,6 +514,7 @@ class StoragePage(BasePage):
                              display_time = unknown_label
                          
                          # UI Improvement: Chip/Badge style
+                         # UI Improvement: Chip/Badge style
                          duration_badge = ft.Container(
                              content=ft.Row(
                                  [
@@ -502,6 +528,9 @@ class StoragePage(BasePage):
                              padding=ft.padding.symmetric(horizontal=8, vertical=4),
                              border_radius=12,
                              width=110,  # Fixed width for duration badge container (content centered)
+                             on_click=lambda e, path=full_path: self.app.page.run_task(self.update_file_duration, path),
+                             tooltip=self._.get("click_to_update_duration", "点击更新时长"),
+                             ink=True,
                          )
                          
                          row_controls.append(
@@ -512,8 +541,7 @@ class StoragePage(BasePage):
                          )
                     
                     # Logic to identify if it's a media file that supports transcription
-                    ext = os.path.splitext(name)[1].lower()
-                    if ext in ['.mp3', '.wav', '.m4a', '.mp4', '.mov', '.mkv', '.flv', '.wma', '.aac', '.flac', '.avi', '.ts', '.webm']:
+                    if self._is_supported_media(name):
                          
                          action_buttons = []
                          if full_path in self.processing_files:
@@ -610,3 +638,136 @@ class StoragePage(BasePage):
             await video_player.preview_video(api_url, is_file_path=False, room_url=room_url)
         else:
             await video_player.preview_video(file_path, is_file_path=True, room_url=room_url)
+
+    async def update_file_duration(self, file_path):
+        """Calculate duration and rename file with duration suffix"""
+        if not os.path.exists(file_path):
+            return
+
+        await self.app.snack_bar.show_snack_bar(self._.get("calculating_duration", "正在计算时长..."))
+        
+        try:
+            from ...utils import utils
+            # Run duration check in thread
+            duration_str = await asyncio.get_event_loop().run_in_executor(
+                None, utils.get_media_duration, file_path
+            )
+
+            if not duration_str:
+                await self.app.snack_bar.show_snack_bar(self._.get("duration_update_failed", "时长更新失败"))
+                return
+
+            # Construct new filename
+            directory = os.path.dirname(file_path)
+            filename = os.path.basename(file_path)
+            name_without_ext, ext = os.path.splitext(filename)
+            
+            # Remove existing duration pattern if present (e.g., _01h20m30s)
+            # Pattern: _\d{2}h\d{2}m\d{2}s at the end of name
+            name_clean = re.sub(r"_\d{2}h\d{2}m\d{2}s$", "", name_without_ext)
+            
+            # Format: original_name_HHhMMmSSs.ext
+            new_filename = f"{name_clean}_{duration_str}{ext}"
+            new_full_path = os.path.join(directory, new_filename)
+            
+            if new_full_path != file_path:
+                if self._rename_with_associated_files(file_path, new_full_path):
+                    await self.app.snack_bar.show_snack_bar(self._.get("duration_update_success", "时长更新成功"))
+                    await self.update_file_list()
+            else:
+                 await self.app.snack_bar.show_snack_bar("时长未变化")
+
+        except Exception as e:
+            logger.error(f"Error updating duration: {e}")
+            await self.app.snack_bar.show_snack_bar(f"{self._.get('duration_update_failed', '时长更新失败')}: {e}")
+
+    async def batch_identify_durations(self):
+        """Identify durations for all eligible files in current directory"""
+        files_to_process = []
+        try:
+            with os.scandir(self.current_path) as it:
+                for entry in it:
+                     if entry.is_file():
+                        if self._is_supported_media(entry.name):
+                            files_to_process.append(entry.path)
+        except Exception as e:
+             logger.error(f"Error scanning for durations: {e}")
+             return
+
+        if not files_to_process:
+             await self.app.snack_bar.show_snack_bar(self._.get("no_files_to_process", "没有文件需要处理"))
+             return
+
+        await self.app.snack_bar.show_snack_bar(self._.get("identifying_durations", "正在识别时长..."))
+        
+        count = 0
+        from ...utils import utils
+        
+        for file_path in files_to_process:
+            if not os.path.exists(file_path):
+                continue
+
+            try:
+                # Synchronous duration check
+                duration_str = await asyncio.get_event_loop().run_in_executor(
+                    None, utils.get_media_duration, file_path
+                )
+                
+                if duration_str:
+                    directory = os.path.dirname(file_path)
+                    filename = os.path.basename(file_path)
+                    name_without_ext, ext = os.path.splitext(filename)
+                    
+                    name_clean = re.sub(r"_\d{2}h\d{2}m\d{2}s$", "", name_without_ext)
+                    new_filename = f"{name_clean}_{duration_str}{ext}"
+                    new_full_path = os.path.join(directory, new_filename)
+                    
+                    if new_full_path != file_path:
+                        if self._rename_with_associated_files(file_path, new_full_path):
+                            count += 1
+            except Exception as e:
+                logger.error(f"Failed to update duration for {file_path}: {e}")
+        
+        if count > 0:
+             await self.update_file_list()
+             await self.app.snack_bar.show_snack_bar(f"{self._.get('duration_identification_complete', '时长识别完成')}: Updated {count} files")
+        else:
+             await self.app.snack_bar.show_snack_bar("没有文件需要更新")
+
+    def _rename_with_associated_files(self, old_path, new_path) -> bool:
+        """Rename media file and its associated text/meta files"""
+        try:
+            # 1. Rename the main file
+            if os.path.exists(old_path):
+                os.rename(old_path, new_path)
+                logger.info(f"Renamed main file: {old_path} -> {new_path}")
+            else:
+                return False
+            
+            # 2. Rename associated files
+            old_base = os.path.splitext(old_path)[0]
+            new_base = os.path.splitext(new_path)[0]
+            
+            associated_exts = ['.txt', '.meta']
+            
+            # Rename standard extensions
+            for ext in associated_exts:
+                old_assoc = old_base + ext
+                new_assoc = new_base + ext
+                if os.path.exists(old_assoc):
+                    os.rename(old_assoc, new_assoc)
+                    logger.info(f"Renamed associated: {old_assoc} -> {new_assoc}")
+            
+            # Rename AI optimized file: filename_AI.txt
+            old_ai = f"{old_base}_AI.txt"
+            new_ai = f"{new_base}_AI.txt"
+            if os.path.exists(old_ai):
+                 os.rename(old_ai, new_ai)
+                 logger.info(f"Renamed AI text: {old_ai} -> {new_ai}")
+
+            return True
+        except Exception as e:
+            logger.error(f"Error during rename chain: {e}")
+            return False
+
+

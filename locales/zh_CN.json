@@ -486,6 +486,13 @@
   "storage_page": {
     "file_duration": "时长: ",
     "unknown_duration": "未知时长",
+    "click_to_update_duration": "点击更新时长",
+    "calculating_duration": "正在计算时长...",
+    "duration_update_success": "时长更新成功",
+    "duration_update_failed": "时长更新失败",
+    "identify_all_durations": "识别全部时长",
+    "identifying_durations": "正在识别时长...",
+    "duration_identification_complete": "时长识别完成",
     "unit_h": "小时",
     "unit_m": "分钟",
     "unit_s": "秒",

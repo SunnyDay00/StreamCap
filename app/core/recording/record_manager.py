@@ -233,7 +233,7 @@ class RecordingManager:
     async def check_if_live(self, recording: Recording):
         """Check if the live stream is available, fetch stream data and update is_live status."""
 
-        recording.manually_stopped = False
+        # recording.manually_stopped = False # Don't reset this blindly, respect user decision
         if recording.is_recording or recording.stopping_in_progress:
             logger.debug(f"Skip check_if_live because recording is busy: {recording.url}")
             return
@@ -320,6 +320,7 @@ class RecordingManager:
             stream_info.anchor_name = utils.clean_name(stream_info.anchor_name, self._["live_room"])
 
         if stream_info.is_live:
+            recording.offline_count = 0
             recording.live_title = stream_info.title
             if recording.streamer_name.strip() == self._["live_room"]:
                 recording.streamer_name = stream_info.anchor_name
@@ -358,7 +359,7 @@ class RecordingManager:
                 )
                 recording.notified_live_start = True
 
-            if not recording.only_notify_no_record:
+            if not recording.only_notify_no_record and not recording.manually_stopped:
                 recording.status_info = RecordingStatus.PREPARING_RECORDING
                 recording.loop_time_seconds = self.loop_time_seconds
                 self.start_update(recording)
@@ -375,9 +376,18 @@ class RecordingManager:
                 recording.status_info = RecordingStatus.LIVE_BROADCASTING
 
         else:
+            if recording.is_live:
+                # Add debounce logic for offline detection
+                recording.offline_count = getattr(recording, 'offline_count', 0) + 1
+                if recording.offline_count < 3:
+                     logger.warning(f"Transient offline detected for {recording.streamer_name} ({recording.offline_count}/3). Keeping Live status.")
+                     recording.is_checking = False
+                     return
+            
             recording.is_recording = False
             if recording.is_live:
                 recording.is_live = False
+                recording.manually_stopped = False # Reset manual stop flag when stream ends
                 self.app.page.run_task(recorder.end_message_push)
 
             recording.status_info = RecordingStatus.MONITORING
@@ -415,7 +425,7 @@ class RecordingManager:
 
     def stop_recording(self, recording: Recording, manually_stopped: bool = True):
         """Stop the recording process."""
-        recording.is_live = False
+        # recording.is_live = False  <-- Removed to preserve live status (it's just stopped recording, not necessarily offline)
         if recording.is_recording:
 
             recording.stopping_in_progress = True
@@ -442,6 +452,7 @@ class RecordingManager:
             recording.start_time = None
             recording.is_recording = False
             recording.manually_stopped = manually_stopped
+            recording.detection_time = datetime.now().time() # Postpone next check
             recording.status_info = RecordingStatus.NOT_RECORDING
             logger.info(f"Stopped recording for {recording.title}")
 
