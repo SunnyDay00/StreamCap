@@ -523,10 +523,13 @@ class SettingsPage(PageBase):
                             ft.Row([
                                 ft.Icon(ft.icons.CHECK_CIRCLE if ready else ft.icons.CANCEL, 
                                         color=ft.Colors.GREEN if ready else ft.Colors.RED),
-                                ft.Text(f"{key.upper()} Model: {model_id.split('/')[-1]}", expand=True),
+                                ft.Column([
+                                     ft.Text(f"{key.upper()} Model: {model_id.split('/')[-1]}", weight=ft.FontWeight.BOLD),
+                                     ft.Text(self._.get(f"model_desc_{key}", ""), size=12, color=ft.Colors.GREY)
+                                ], spacing=2, expand=True),
                                 ft.Text(self._["model_status_ready"] if ready else self._["model_status_missing"], 
                                         color=ft.Colors.GREEN if ready else ft.Colors.RED)
-                            ])
+                            ], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.START)
                         )
                     return rows
                 except Exception as e:
@@ -570,7 +573,9 @@ class SettingsPage(PageBase):
             # Initial Load
             initial_rows = create_model_list()
             
-            content_controls = [
+            # 1. Local STT Controls
+            # 1. Local STT Controls
+            local_stt_controls = [
                         ft.Container(
                             content=ft.Column(controls=initial_rows, ref=self.model_list_ref), 
                             padding=10
@@ -591,22 +596,28 @@ class SettingsPage(PageBase):
                                 on_click=download_models
                             ),
                         ]),
-                        self.download_status_text,
-                        self.download_progress_bar,
                         
-                        ft.Divider(height=20, thickness=1),
+                        # Vocal Enhancement Toggle
+                        ft.Divider(height=10, color=ft.Colors.TRANSPARENT),
                         self.create_setting_row(
-                             self._.get("auto_identify_text", "Auto Identify"),
+                             self._.get("enable_vocal_enhancement", "Enable Vocal Enhancement"),
                              ft.Switch(
-                                value=self.get_config_value("auto_identify_text", False),
-                                data="auto_identify_text",
+                                value=self.get_config_value("enable_vocal_enhancement", False),
+                                data="enable_vocal_enhancement",
                                 on_change=self.on_change
                              )
                         ),
+                        ft.Container(
+                            content=ft.Text(self._.get("vocal_enhancement_tip", "Tip..."), size=12, color=ft.Colors.GREY),
+                            padding=ft.padding.only(left=0, top=0, bottom=10)
+                        ),
+
+                        self.download_status_text,
+                        self.download_progress_bar,
                     ]
 
 
-            # AI Configuration Section
+            # AI Configuration Logic
             from ...core.ai.ai_optimizer import CONF_AI_API_KEY, CONF_AI_BASE_URL, CONF_AI_MODEL, CONF_AI_ENABLED, DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL
 
             def on_ai_test_click(e):
@@ -615,9 +626,6 @@ class SettingsPage(PageBase):
             async def test_ai_connection():
                 from ...core.ai.ai_optimizer import AITextOptimizer
                 optimizer = AITextOptimizer(self.config_manager)
-                
-                # Get current values from UI inputs (via bound data or directly from config as they saved on change)
-                # Since updates are auto-saved on change, we can read from config
                 
                 api_key = self.get_config_value(CONF_AI_API_KEY)
                 base_url = self.get_config_value(CONF_AI_BASE_URL, DEFAULT_AI_BASE_URL)
@@ -636,10 +644,6 @@ class SettingsPage(PageBase):
                     await self.app.snack_bar.show_snack_bar(f"{self._['connection_failed']}: {msg}", bgcolor=ft.Colors.RED)
 
             ai_config_controls = [
-                ft.Divider(height=20, thickness=1),
-                ft.Text(self._["ai_config_title"], size=20, weight=ft.FontWeight.BOLD),
-                ft.Text(self._["ai_config_tip"], size=12, color=ft.Colors.GREY),
-                
                 self.create_setting_row(
                     self._["enable_ai_optimization"],
                     ft.Switch(
@@ -648,7 +652,6 @@ class SettingsPage(PageBase):
                         on_change=self.on_change
                     )
                 ),
-
                 self.create_setting_row(
                     f"{self._['ai_api_key']} *",
                     ft.TextField(
@@ -690,25 +693,54 @@ class SettingsPage(PageBase):
                     style=ft.ButtonStyle(bgcolor=ft.Colors.GREEN, color=ft.Colors.WHITE)
                 )
             ]
-            
-            content_controls.extend(ai_config_controls)
+
+            # 2. Auto Identify Controls
+            # Use a custom row instead of create_setting_row to have control over label size
+            auto_identify_controls = [
+                ft.Container(
+                    content=ft.Row([
+                        ft.Text(self._.get("auto_identify_text", "Auto Identify"), size=16, weight=ft.FontWeight.BOLD), # Larger font
+                        ft.Switch(
+                            value=self.get_config_value("auto_identify_text", False),
+                            data="auto_identify_text",
+                            on_change=self.on_change
+                        )
+                    ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN),
+                    padding=ft.padding.symmetric(vertical=10)
+                )
+            ]
 
         except Exception as e:
             logger.error(f"Failed to initialize LocalSTTService or UI: {e}")
-            content_controls = [ft.Text(f"Error initializing local STT service: {e}", color=ft.Colors.RED)]
+            local_stt_controls = [ft.Text(f"Error initializing local STT service: {e}", color=ft.Colors.RED)]
+            ai_config_controls = []
+            auto_identify_controls = []
 
         return ft.Column(
             [
                 self.create_setting_group(
                     self._["local_stt_settings"],
                     self._["local_stt_tip"],
-                    content_controls,
+                    local_stt_controls,
+                    is_mobile,
+                ),
+                self.create_setting_group(
+                    self._.get("auto_identify_text", "Auto Identify"),
+                    self._.get("auto_identify_tip", "Automatically identify text after recording completes."),
+                    auto_identify_controls,
+                    is_mobile,
+                ),
+                self.create_setting_group(
+                    self._["ai_config_title"],
+                    self._["ai_config_tip"],
+                    ai_config_controls,
                     is_mobile,
                 ),
             ],
-            spacing=10,
+            spacing=20,
             scroll=ft.ScrollMode.AUTO,
         )
+
 
     def create_dependencies_tab(self):
         """Create UI elements for Dependencies settings."""

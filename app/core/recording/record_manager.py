@@ -120,6 +120,8 @@ class RecordingManager:
             self.app.page.run_task(self.app.record_card_manager.update_card, recording)
             self.app.page.pubsub.send_others_on_topic("update", recording)
 
+            # Force check immediately by resetting detection time
+            recording.detection_time = None
             self.app.page.run_task(self.check_if_live, recording)
 
             if auto_save:

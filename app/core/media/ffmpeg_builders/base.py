@@ -66,7 +66,7 @@ class FFmpegCommandBuilder(abc.ABC):
 
         :return: List of strings representing the FFmpeg command components.
         """
-        from ...scripts.ffmpeg_install import get_ffmpeg_path
+        from ....scripts.ffmpeg_install import get_ffmpeg_path
         
         ffmpeg_exe = get_ffmpeg_path() or "ffmpeg" # Fallback to system command if detection fails
         

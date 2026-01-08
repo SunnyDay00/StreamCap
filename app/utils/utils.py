@@ -148,8 +148,64 @@ def open_folder(directory_path: str) -> bool:
     except subprocess.CalledProcessError:
         logger.error(f"Failed to open folder '{directory_path}'. Please ensure the path is valid and accessible.")
     except Exception as e:
-        logger.error(f"An unexpected error occurred: {e}")
-    return False
+        logger.error(f"Failed to open folder '{directory_path}': {e}")
+        return False
+
+
+def get_media_duration(file_path: str) -> str | None:
+    """
+    Get media duration in format HH:MM:SS.
+    Uses OpenCV for video (as requested) and ffmpeg/ffprobe for audio/fallback.
+    """
+    duration_sec = 0.0
+    try:
+        ext = os.path.splitext(file_path)[1].lower()
+        is_video = ext in ['.mp4', '.avi', '.mov', '.mkv', '.flv', '.ts', '.webm']
+        
+        # Try OpenCV for video
+        if is_video:
+            try:
+                import cv2
+                cap = cv2.VideoCapture(file_path)
+                if cap.isOpened():
+                    fps = cap.get(cv2.CAP_PROP_FPS)
+                    frame_count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+                    if fps > 0 and frame_count > 0:
+                        duration_sec = frame_count / fps
+                    cap.release()
+            except ImportError:
+                logger.warning("OpenCV not installed, falling back to ffmpeg")
+            except Exception as e:
+                logger.error(f"OpenCV duration check failed: {e}")
+
+        # Fallback to ffmpeg/ffprobe if duration still 0 (Audio or OpenCV failed)
+        if duration_sec <= 0:
+            try:
+                # Use checking via ffmpeg output duration parsing or ffprobe
+                # FFprobe is cleaner if available.
+                cmd = [
+                    "ffprobe", 
+                    "-v", "error", 
+                    "-show_entries", "format=duration", 
+                    "-of", "default=noprint_wrappers=1:nokey=1", 
+                    file_path
+                ]
+                # We need to run this synchronously here as utils logic
+                result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                if result.returncode == 0:
+                    duration_sec = float(result.stdout.strip())
+            except Exception as e:
+                logger.error(f"FFmpeg duration check failed: {e}")
+
+        if duration_sec > 0:
+            m, s = divmod(int(duration_sec), 60)
+            h, m = divmod(m, 60)
+            return f"{h:02d}h{m:02d}m{s:02d}s"
+            
+    except Exception as e:
+        logger.error(f"Error getting media duration: {e}")
+    
+    return None
 
 
 def add_hours_to_time(time_str: str, hours_to_add: float) -> str:

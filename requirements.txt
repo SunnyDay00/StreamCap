@@ -11,3 +11,4 @@ funasr>=1.0.0
 modelscope>=1.10.0
 torch
 torchaudio
+opencv-python>=4.10.0

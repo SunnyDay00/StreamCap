@@ -244,50 +244,59 @@ class LiveStreamRecorder:
         except Exception as e:
             logger.error(f"Failed to save recorder instance: {e}")
 
-        if use_direct_download:
-            logger.info(f"Use Direct Downloader to Download FLV Stream: {record_url}")
-            headers = {}
-            header_params = self.get_headers_params(record_url, self.platform_key)
-            if header_params:
-                key, value = header_params.split(":", 1)
-                headers[key] = value
+        try:
+            if use_direct_download:
+                logger.info(f"Use Direct Downloader to Download FLV Stream: {record_url}")
+                headers = {}
+                header_params = self.get_headers_params(record_url, self.platform_key)
+                if header_params:
+                    key, value = header_params.split(":", 1)
+                    headers[key] = value
 
-            self.direct_downloader = DirectStreamDownloader(
-                record_url=record_url,
-                save_path=save_path,
-                headers=headers,
-                proxy=self.proxy
-            )
+                self.direct_downloader = DirectStreamDownloader(
+                    record_url=record_url,
+                    save_path=save_path,
+                    headers=headers,
+                    proxy=self.proxy
+                )
 
-            self.app.page.run_task(
-                self.start_direct_download,
-                stream_info.anchor_name,
-                self.live_url,
-                record_url,
-                save_path,
-                self.save_format,
-                self.user_config.get("custom_script_command")
-            )
-        else:
-            ffmpeg_builder = ffmpeg_builders.create_builder(
-                self.save_format,
-                record_url=record_url,
-                proxy=self.proxy,
-                segment_record=self.segment_record,
-                segment_time=self.segment_time,
-                full_path=save_path,
-                headers=self.get_headers_params(record_url, self.platform_key)
-            )
-            ffmpeg_command = ffmpeg_builder.build_command()
-            self.app.page.run_task(
-                self.start_ffmpeg,
-                stream_info.anchor_name,
-                self.live_url,
-                record_url,
-                ffmpeg_command,
-                self.save_format,
-                self.user_config.get("custom_script_command")
-            )
+                self.app.page.run_task(
+                    self.start_direct_download,
+                    stream_info.anchor_name,
+                    self.live_url,
+                    record_url,
+                    save_path,
+                    self.save_format,
+                    self.user_config.get("custom_script_command")
+                )
+            else:
+                ffmpeg_builder = ffmpeg_builders.create_builder(
+                    self.save_format,
+                    record_url=record_url,
+                    proxy=self.proxy,
+                    segment_record=self.segment_record,
+                    segment_time=self.segment_time,
+                    full_path=save_path,
+                    headers=self.get_headers_params(record_url, self.platform_key)
+                )
+                ffmpeg_command = ffmpeg_builder.build_command()
+                self.app.page.run_task(
+                    self.start_ffmpeg,
+                    stream_info.anchor_name,
+                    self.live_url,
+                    record_url,
+                    ffmpeg_command,
+                    self.save_format,
+                    self.user_config.get("custom_script_command")
+                )
+
+        except Exception as e:
+            logger.error(f"Failed to initiate recording process: {e}")
+            await self.remove_active_recorder()
+            self.recording.status_info = RecordingStatus.RECORDING_ERROR
+            self.recording.is_recording = False
+            self.app.page.run_task(self.app.record_card_manager.update_card, self.recording)
+            await self.app.snack_bar.show_snack_bar(f"Failed to start recording: {e}", duration=4000)
 
     async def remove_active_recorder(self):
         try:
@@ -427,68 +436,16 @@ class LiveStreamRecorder:
 
                 await self.recheck_live_status()
 
-                if self.user_config.get("convert_to_mp4") and self.save_format == "ts":
-                    if self.segment_record:
-                        file_paths = utils.get_file_paths(os.path.dirname(save_file_path))
-                        prefix = os.path.basename(save_file_path).rsplit("_", maxsplit=1)[0]
-                        for path in file_paths:
-                            if prefix in path:
-                                try:
-                                    self.app.page.run_task(
-                                        self.converts_mp4, path, self.user_config["delete_original"]
-                                    )
-                                except Exception as e:
-                                    logger.error(f"Failed to convert video: {e}")
-                                    await self.converts_mp4(path, self.user_config["delete_original"])
-                    else:
-                        try:
-                            self.app.page.run_task(
-                                self.converts_mp4, save_file_path, self.user_config["delete_original"]
-                            )
-                        except Exception as e:
-                            logger.error(f"Failed to convert video: {e}")
-                            await self.converts_mp4(save_file_path, self.user_config["delete_original"])
-
-                if self.user_config.get("execute_custom_script") and script_command:
-                    logger.info("Prepare a direct script in the background")
-                    try:
-                        self.app.page.run_task(
-                            self.custom_script_execute,
-                            script_command,
-                            record_name,
-                            save_file_path,
-                            save_type,
-                            self.segment_record,
-                            self.user_config.get("convert_to_mp4")
-                        )
-                        logger.success("Successfully added script execution")
-                    except Exception as e:
-                        logger.error(f"Failed to execute custom script: {e}")
-                        await self.custom_script_execute(
-                            script_command,
-                            record_name,
-                            save_file_path,
-                            save_type,
-                            self.segment_record,
-                            self.user_config.get("convert_to_mp4")
-                        )
-                
-                # Auto Identify Text
-                if self.user_config.get("auto_identify_text", False):
-                     # Determine target file for identification (mp4 if converted, else original)
-                     target_file = save_file_path
-                     if self.user_config.get("convert_to_mp4") and self.save_format == "ts":
-                          # If converted processing happened, target the .mp4 file
-                          # This assumes conversion was successful or is happening. 
-                          # Ideally we should wait or queue it?
-                          # If conversion is async background, wait? 
-                          # logic above: `await self.converts_mp4` if not recording_enabled(background) or sync. 
-                          # If sync (default flow above), file is ready.
-                          if self.user_config.get("delete_original"):
-                               target_file = os.path.splitext(save_file_path)[0] + ".mp4"
-                     
-                     logger.info(f"Auto-identifying text for: {target_file}")
-                     self.app.page.run_task(self.app.transcription_manager.transcribe_file, target_file)
+                if os.path.exists(save_file_path) and os.path.getsize(save_file_path) > 0:
+                    self.app.page.run_task(
+                        self._post_process_recording,
+                        save_file_path,
+                        record_name,
+                        self.save_format,
+                        script_command
+                    )
+                else:
+                    logger.warning(f"Recording file missing or empty, skipping post-process: {save_file_path}")
 
         except Exception as e:
             logger.error(f"An error occurred during the subprocess execution: {e}")
@@ -505,9 +462,98 @@ class LiveStreamRecorder:
                 logger.debug(f"Failed to update UI: {e}")
             return False
         finally:
+            await self.remove_active_recorder()
             self.recording.record_url = None
 
         return True
+
+    async def _post_process_recording(self, save_file_path, record_name, save_type, script_command):
+        """Unified post-processing: Convert -> Script -> Identify"""
+        final_file_path = save_file_path
+        
+        # 1. Convert to MP4
+        if self.user_config.get("convert_to_mp4") and save_type == "ts":
+            if self.segment_record:
+                file_paths = utils.get_file_paths(os.path.dirname(save_file_path))
+                prefix = os.path.basename(save_file_path).rsplit("_", maxsplit=1)[0]
+                for path in file_paths:
+                    if prefix in path:
+                         await self._do_converts_mp4(path, self.user_config["delete_original"])
+                         # Note: Segmented recording identification is complex, targeting the last one or all?
+                         # For now, we skip auto-identify on segmented checks or just identify the last one.
+                         final_file_path = os.path.splitext(path)[0] + ".mp4"
+            else:
+                await self._do_converts_mp4(save_file_path, self.user_config["delete_original"])
+                final_file_path = os.path.splitext(save_file_path)[0] + ".mp4"
+
+        # 1.5 Calculate Duration and Rename
+        # User requested to write duration to filename.
+        # 1.5 Calculate Duration and Rename
+        # User requested to write duration to filename.
+        if os.path.exists(final_file_path):
+            duration_str = utils.get_media_duration(final_file_path)
+            if duration_str:
+                # Sanitize duration string for Windows filename (replace : with - or similar if needed)
+                # Assuming utils returns HH:MM:SS, we want HHhMMmSSs or HH-MM-SS
+                safe_duration = duration_str.replace(":", "h", 1).replace(":", "m", 1) + "s"
+                safe_duration = safe_duration.replace(":", "-") # fallback
+                
+                logger.info(f"Calculated duration: {duration_str} -> {safe_duration}")
+                
+                # Rename file
+                dir_name = os.path.dirname(final_file_path)
+                file_name = os.path.basename(final_file_path)
+                name, ext = os.path.splitext(file_name)
+                
+                new_name = f"{name}_{safe_duration}{ext}"
+                new_path = os.path.join(dir_name, new_name)
+                
+                try:
+                    os.rename(final_file_path, new_path)
+                    logger.info(f"Renamed file with duration: {final_file_path} -> {new_path}")
+                    final_file_path = new_path
+                except Exception as e:
+                    logger.error(f"Failed to rename file with duration: {e}")
+            else:
+                logger.warning("Could not calculate duration, skipping rename.")
+
+        # 2. Custom Script
+        if self.user_config.get("execute_custom_script") and script_command:
+            logger.info("Starting custom script execution...")
+            await self.custom_script_execute(
+                script_command,
+                record_name,
+                final_file_path,
+                save_type,
+                self.segment_record,
+                self.user_config.get("convert_to_mp4")
+            )
+
+        # 3. Auto Identify
+        if self.user_config.get("auto_identify_text", False):
+             # Ensure file exists before trying to identify
+             if os.path.exists(final_file_path):
+                 logger.info(f"Preparing to auto-identify: {final_file_path}")
+                 
+                 # Integrity Check
+                 is_valid = await self.check_file_integrity(final_file_path)
+                 
+                 # Retry once if failed? Or just proceed if valid.
+                 if not is_valid:
+                      logger.warning(f"File integrity check failed, waiting 3s to retry... {final_file_path}")
+                      await asyncio.sleep(3)
+                      is_valid = await self.check_file_integrity(final_file_path)
+
+                 if is_valid:
+                     logger.info(f"File integrity verified. Auto-identifying: {final_file_path}")
+                     try:
+                        await self.app.transcription_manager.transcribe_file(final_file_path)
+                     except Exception as e:
+                        logger.error(f"Auto-identify failed: {e}")
+                 else:
+                     logger.error(f"Skipping auto-identify: File integrity check failed or timed out. {final_file_path}")
+             else:
+                 logger.warning(f"Skipping auto-identify: File not found {final_file_path}")
 
     async def converts_mp4(self, converts_file_path: str, is_original_delete: bool = True) -> None:
         """Asynchronous transcoding method, can be added to the background service to continue execution"""
@@ -584,6 +630,36 @@ class LiveStreamRecorder:
             logger.error(f"Error occurred during conversion: {e}")
         except Exception as e:
             logger.error(f"An unknown error occurred: {e}")
+
+
+
+    async def check_file_integrity(self, file_path: str, timeout: int = 10) -> bool:
+        """Check if the video file is valid using ffmpeg"""
+        try:
+             # Wait a bit for file handle release
+             await asyncio.sleep(2)
+             
+             cmd = ["ffmpeg", "-v", "error", "-i", file_path, "-f", "null", "-"]
+             process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                startupinfo=self.subprocess_start_info
+             )
+             try:
+                 _, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+                 if process.returncode == 0:
+                     return True
+                 logger.warning(f"File integrity check failed for {file_path}: {stderr.decode()}")
+                 return False
+             except asyncio.TimeoutError:
+                 logger.warning(f"File integrity check timed out for {file_path}")
+                 if process.returncode is None:
+                     process.kill()
+                 return False
+        except Exception as e:
+            logger.error(f"Error checking file integrity: {e}")
+            return False
 
     async def custom_script_execute(
             self,
@@ -748,34 +824,15 @@ class LiveStreamRecorder:
 
             await self.recheck_live_status()
 
-            if self.user_config.get("execute_custom_script") and script_command:
-                logger.info("Prepare to execute custom script in the background")
-                try:
-                    self.app.page.run_task(
-                        self.custom_script_execute,
-                        script_command,
-                        record_name,
-                        save_file_path,
-                        save_type,
-                        False,
-                        False
-                    )
-                    logger.success("Successfully added script execution")
-                except Exception as e:
-                    logger.error(f"Failed to execute custom script: {e}")
-                    await self.custom_script_execute(
-                        script_command,
-                        record_name,
-                        save_file_path,
-                        save_type,
-                        False,
-                        False
-                    )
-            
-            # Auto Identify Text for Direct Download
-            if self.user_config.get("auto_identify_text", False):
-                 logger.info(f"Auto-identifying text for: {save_file_path}")
-                 self.app.page.run_task(self.app.transcription_manager.transcribe_file, save_file_path)
+            await self.recheck_live_status()
+
+            self.app.page.run_task(
+                self._post_process_recording,
+                save_file_path,
+                record_name,
+                save_type,
+                script_command
+            )
 
             return True
 
@@ -794,7 +851,22 @@ class LiveStreamRecorder:
                 logger.debug(f"Failed to update UI: {e}")
             return False
         finally:
+            await self.remove_active_recorder()
             self.recording.record_url = None
+
+    async def remove_active_recorder(self):
+        """Remove self from active recorders list safely."""
+        try:
+            if self.recording.rec_id in self.app.record_manager.active_recorders:
+                # Check if the instance in dictionary is THIS instance
+                active_instance = self.app.record_manager.active_recorders[self.recording.rec_id]
+                if active_instance is self:
+                    del self.app.record_manager.active_recorders[self.recording.rec_id]
+                    logger.info(f"Removed active recorder: {self.recording.rec_id}")
+                else:
+                    logger.warning(f"Recorder ID {self.recording.rec_id} mismatch in active list. Not removing.")
+        except Exception as e:
+            logger.error(f"Error removing active recorder: {e}")
 
     async def stop_recording_notify(self):
         if desktop_notify.should_push_notification(self.app):
