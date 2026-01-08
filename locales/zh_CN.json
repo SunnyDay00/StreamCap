@@ -484,6 +484,11 @@
     "dont_show_again": "下次不再提示"
   },
   "storage_page": {
+    "file_duration": "时长: ",
+    "unknown_duration": "未知时长",
+    "unit_h": "小时",
+    "unit_m": "分钟",
+    "unit_s": "秒",
     "storage_path": "存储路径",
     "current_path": "当前路径",
     "empty_recording_folder": "录制文件夹为空，暂无录制的直播视频",

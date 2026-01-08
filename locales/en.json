@@ -484,6 +484,11 @@
     "dont_show_again": "Don't Show Again"
   },
   "storage_page": {
+    "file_duration": "Duration: ",
+    "unknown_duration": "Unknown",
+    "unit_h": "h ",
+    "unit_m": "m ",
+    "unit_s": "s",
     "storage_path": "Storage Path",
     "current_path": "Current Path",
     "empty_recording_folder": "Empty Recording Folder",

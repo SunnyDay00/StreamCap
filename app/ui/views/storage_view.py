@@ -1,5 +1,6 @@
 import asyncio
 import os
+import re
 from concurrent.futures import ThreadPoolExecutor
 
 import flet as ft
@@ -381,6 +382,15 @@ class StoragePage(BasePage):
             except Exception as ex:
                 logger.error(f"Export failed: {ex}")
 
+    def _extract_duration(self, filename: str) -> str | None:
+        """Extract duration from filename (FORMAT: _HHhMMmSSs)"""
+        name, _ = os.path.splitext(filename)
+        # Search for pattern at end of string: _00h00m36s
+        match = re.search(r"_(\d+h\d+m\d+s)$", name)
+        if match:
+             return match.group(1)
+        return None
+
     async def create_file_buttons(self):
         def _get_items():
             try:
@@ -426,6 +436,7 @@ class StoragePage(BasePage):
                         ),
                     )
                     controls_list.append(ft.Row([ft.Container(content=btn, expand=True)]))
+
                 else:
                     ext = os.path.splitext(name)[1].lower()
                     icon_str = "📄"  # Default generic file icon
@@ -446,14 +457,71 @@ class StoragePage(BasePage):
                     
                     row_controls = [ft.Container(content=file_btn, expand=True)]
                     
+                    # Add Duration Display for media files
+                    if ext in ['.mp3', '.wav', '.m4a', '.mp4', '.mov', '.mkv', '.flv', '.wma', '.aac', '.flac', '.avi', '.ts', '.webm']:
+                         duration_str = self._extract_duration(name)
+                         
+                         unknown_label = self._.get("unknown_duration", "Unknown")
+                         
+                         if duration_str:
+                             # Format: 00h00m36s
+                             # Parse and localize
+                             match = re.match(r"(\d+)h(\d+)m(\d+)s", duration_str)
+                             if match:
+                                 h, m, s = map(int, match.groups())
+                                 
+                                 # Format based on simplified keys or hardcoded if keys missing
+                                 # We assume keys "unit_h", "unit_m", "unit_s" exist or fallback
+                                 u_h = self._.get("unit_h", "h")
+                                 u_m = self._.get("unit_m", "m")
+                                 u_s = self._.get("unit_s", "s")
+                                 
+                                 # Smart formatting: hide 0h if 0
+                                 if h > 0:
+                                     display_time = f"{h}{u_h}{m}{u_m}{s}{u_s}"
+                                 elif m > 0:
+                                     display_time = f"{m}{u_m}{s}{u_s}"
+                                 else:
+                                     display_time = f"{s}{u_s}"
+                             else:
+                                 display_time = duration_str
+                         else:
+                             display_time = unknown_label
+                         
+                         # UI Improvement: Chip/Badge style
+                         duration_badge = ft.Container(
+                             content=ft.Row(
+                                 [
+                                     ft.Icon(ft.icons.ACCESS_TIME, size=14, color=ft.Colors.GREY_600),
+                                     ft.Text(display_time, size=12, color=ft.Colors.GREY_700, weight=ft.FontWeight.W_500)
+                                 ],
+                                 alignment=ft.MainAxisAlignment.CENTER,
+                                 spacing=2
+                             ),
+                             bgcolor=ft.Colors.GREY_100,
+                             padding=ft.padding.symmetric(horizontal=8, vertical=4),
+                             border_radius=12,
+                             width=110,  # Fixed width for duration badge container (content centered)
+                         )
+                         
+                         row_controls.append(
+                             ft.Container(
+                                 content=duration_badge,
+                                 padding=ft.padding.only(right=10),
+                             )
+                         )
+                    
                     # Logic to identify if it's a media file that supports transcription
                     ext = os.path.splitext(name)[1].lower()
                     if ext in ['.mp3', '.wav', '.m4a', '.mp4', '.mov', '.mkv', '.flv', '.wma', '.aac', '.flac', '.avi', '.ts', '.webm']:
                          
+                         action_buttons = []
                          if full_path in self.processing_files:
                              # Show processing state
-                             row_controls.append(ft.ProgressRing(width=20, height=20, stroke_width=2))
-                             row_controls.append(ft.Text(self._["identifying"], italic=True, color=ft.Colors.BLUE))
+                             # For processing, we can put it in the same action container or separate?
+                             # Let's put in action container to keep alignment.
+                             action_buttons.append(ft.ProgressRing(width=20, height=20, stroke_width=2))
+                             action_buttons.append(ft.Text(self._["identifying"], italic=True, color=ft.Colors.BLUE))
                          else:
                              has_transcription = self.transcription_manager.has_text(full_path)
                              
@@ -475,11 +543,18 @@ class StoragePage(BasePage):
                                      tooltip=self._["export_text"],
                                      on_click=lambda e, path=full_path: self.export_text_file(path)
                                  )
-                                 
-                                 row_controls.append(history_btn)
-                                 row_controls.append(export_btn)
+                                 action_buttons.append(history_btn)
+                                 action_buttons.append(export_btn)
                              
-                             row_controls.append(identify_btn)
+                             action_buttons.append(identify_btn)
+                         
+                         # Fixed width container for actions to ensure file button has uniform width
+                         actions_container = ft.Container(
+                             content=ft.Row(action_buttons, alignment=ft.MainAxisAlignment.END, spacing=5),
+                             width=280, 
+                             alignment=ft.alignment.center_right
+                         )
+                         row_controls.append(actions_container)
                          
                     controls_list.append(ft.Row(row_controls))
 
