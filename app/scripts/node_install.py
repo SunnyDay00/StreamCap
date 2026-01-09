@@ -228,6 +228,18 @@ def update_env_path():
 
 async def check_nodejs_installed() -> bool:
     try:
+        # First check explicitly for local node
+        local_node_exe = os.path.join(node_path, "node.exe") if current_platform == "Windows" else os.path.join(node_path, "bin", "node")
+        if os.path.exists(local_node_exe):
+             # Validate it runs
+             result = subprocess.run([local_node_exe, "-v"], capture_output=True, startupinfo=startupinfo, text=True)
+             if result.returncode == 0:
+                 logger.info(f"Found local Node.js: {result.stdout.strip()}")
+                 # Update Env for this process
+                 update_env_path()
+                 return True
+
+        # Fallback to system check
         update_env_path()
         result = subprocess.run(["node", "-v"], capture_output=True, startupinfo=startupinfo, text=True)
         logger.info(result)

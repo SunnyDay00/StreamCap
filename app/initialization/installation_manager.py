@@ -1,7 +1,9 @@
 import flet as ft
+import os
 
 from ..scripts.ffmpeg_install import check_ffmpeg_installed, install_ffmpeg
 from ..scripts.node_install import check_nodejs_installed, install_nodejs
+from ..scripts.pylib_install import check_pylibs_installed, install_pylibs
 from ..utils.logger import logger
 
 
@@ -15,12 +17,21 @@ class InstallationManager:
         self.failed_components = set()
         self.app.language_manager.add_observer(self)
         self._ = {}
+        self._status_cache = {}
         self.load()
 
     def load(self):
         language = self.app.language_manager.language
         for key in ("base", "install_manager"):
             self._.update(language.get(key, {}))
+
+    def invalidate_cache(self, name: str | None = None):
+        """Invalidate status cache for a specific component or all."""
+        if name:
+            if name in self._status_cache:
+                del self._status_cache[name]
+        else:
+            self._status_cache.clear()
 
     async def get_install_components(self):
         components = [
@@ -39,6 +50,7 @@ class InstallationManager:
                 lambda progress, status: self.update_component_progress(install_func, progress, status)
             )
             if result:
+                self.invalidate_cache(install_func) # Invalidate cache on success
                 await self.update_component_progress(install_func, 1.0, self._["complete"])
                 self.completed_components.add(install_func)
         except Exception as e:
@@ -47,6 +59,10 @@ class InstallationManager:
 
     async def get_component_status(self, name):
         """Get detailed status of a component for Settings UI."""
+        if name in self._status_cache:
+            return self._status_cache[name]
+
+        status = None
         if name == "FFmpeg":
             from ..scripts.ffmpeg_install import check_ffmpeg_installed, get_ffmpeg_path, get_ffmpeg_version_info
             
@@ -55,7 +71,7 @@ class InstallationManager:
             path = get_ffmpeg_path()
             version = get_ffmpeg_version_info(path) if path else None
             
-            return {
+            status = {
                 "name": "FFmpeg",
                 "installed": is_installed,
                 "path": path or "Not Found",
@@ -63,15 +79,43 @@ class InstallationManager:
                 "is_local": path and (self.app.run_path in path) if path else False
             }
         elif name == "Node.js":
-             from ..scripts.node_install import check_nodejs_installed
+             from ..scripts.node_install import check_nodejs_installed, node_path
              is_installed = await check_nodejs_installed()
-             return {
+             
+             path_display = "System Path"
+             is_local = False
+             
+             local_node_exe = os.path.join(node_path, "node.exe")
+             if os.path.exists(local_node_exe):
+                 path_display = node_path
+                 is_local = True
+                 
+             status = {
                  "name": "Node.js",
                  "installed": is_installed,
-                 "path": "System Path", # Node script doesn't expose path easily yet, can improve later
-                 "version": "Unknown"
+                 "path": path_display,
+                 "version": "Unknown", # Could capture version in check_nodejs_installed and return it if needed
+                 "is_local": is_local
              }
-        return None
+        elif name == "Python Libs":
+             is_installed = await check_pylibs_installed()
+             # We assume if it installs, it goes to execute_dir/libs
+             # So it is always "local" if installed via our tool
+             
+             path = os.path.join(self.app.run_path, "libs")
+             
+             status = {
+                 "name": self._.get("python_libs", "Python Libs"),
+                 "installed": is_installed,
+                 "path": path if is_installed else "Not Found",
+                 "version": "Latest", 
+                 "is_local": is_installed
+             }
+        
+        if status:
+            self._status_cache[name] = status
+            
+        return status
 
     async def install_components(self):
         left_btn = self.install_dialog.actions[0]

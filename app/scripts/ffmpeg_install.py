@@ -78,60 +78,111 @@ async def install_ffmpeg_windows(update_progress):
         logger.warning("ffmpeg is not installed.")
         logger.debug("Installing the latest version of ffmpeg for Windows...")
         await update_progress(0.1, "Get FFmpeg installation resources")
-        headers = {
-            'content-type': 'application/x-www-form-urlencoded',
-            'accept-language': 'zh-CN,zh;q=0.9',
-            'origin': 'https://wweb.lanzoum.com',
-            'referer': 'https://wweb.lanzoum.com/iHAc22ly3r3g',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)'
-                          ' Chrome/121.0.0.0 Safari/537.36 Edg/121.0.0.0',
-            'x-requested-with': 'XMLHttpRequest',
-        }
-        ffmpeg_url = await get_lanzou_download_link("https://wweb.lanzoum.com/iHAc22ly3r3g", "eots", headers)
-        if ffmpeg_url:
-            full_file_name = "ffmpeg_latest_build_20250124.zip"
-            version = "v20250124"
-            zip_file_path = Path(execute_dir) / full_file_name
-            if Path(zip_file_path).exists():
-                await update_progress(0.8, "FFmpeg installation file already exists")
-                logger.debug("ffmpeg installation file already exists, start install...")
-            else:
-                await update_progress(0.2, "Start downloading FFmpeg installation package")
-                logger.debug(f"FFmpeg Download ({version}): {ffmpeg_url}")
-                async with (httpx.AsyncClient(follow_redirects=True) as client,
-                            client.stream("GET", ffmpeg_url, headers=headers) as resp):
+        
+        # Use gyan.dev release essentials for reliability
+        ffmpeg_url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+        full_file_name = "ffmpeg-release-essentials.zip"
+        zip_file_path = Path(execute_dir) / full_file_name
+        
+        if Path(zip_file_path).exists():
+            await update_progress(0.8, "FFmpeg installation file already exists")
+            logger.debug("ffmpeg installation file already exists, start install...")
+        else:
+            await update_progress(0.2, "Start downloading FFmpeg installation package")
+            logger.debug(f"FFmpeg Download: {ffmpeg_url}")
+            
+            headers = {
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+            
+            async with (httpx.AsyncClient(follow_redirects=True, timeout=300) as client,
+                        client.stream("GET", ffmpeg_url, headers=headers) as resp):
 
-                    total_size = int(resp.headers.get("Content-Length", 0))
-                    if resp.status_code != 200 and total_size != 0:
-                        logger.error("FFmpeg package resources cannot be accessed")
-                        raise Exception("The resource address cannot be accessed")
+                if resp.status_code != 200:
+                    logger.error("FFmpeg package resources cannot be accessed")
+                    raise Exception("The resource address cannot be accessed")
 
-                    downloaded = 0
-                    with open(zip_file_path, "wb") as f:
-                        async for chunk in resp.aiter_bytes():
-                            f.write(chunk)
-                            downloaded += len(chunk)
-
+                total_size = int(resp.headers.get("Content-Length", 0))
+                downloaded = 0
+                with open(zip_file_path, "wb") as f:
+                    async for chunk in resp.aiter_bytes():
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        
+                        if total_size > 0:
                             progress = 0.2 + 0.6 * (downloaded / total_size)
                             await update_progress(
                                 round(progress, 2), f"Downloading... {downloaded // 1024}KB/{total_size // 1024}KB"
                             )
+                        else:
+                            await update_progress(0.5, f"Downloading... {downloaded // 1024}KB")
 
-            await update_progress(0.8, "Extracting and cleaning installation files")
-            await unzip_file(zip_file_path, execute_dir)
-            await update_progress(0.9, "Configuring FFmpeg environment variables")
-            os.environ["PATH"] = ffmpeg_path + os.pathsep + os.environ.get("PATH")
-            result = subprocess.run(["ffmpeg", "-version"], capture_output=True, startupinfo=startupinfo)
-            if result.returncode == 0:
-                logger.success("FFmpeg installation was successful")
-                return True
-            else:
-                logger.error("ffmpeg installation failed. Please manually install ffmpeg by yourself")
-                raise Exception("Please restart the program")
+        await update_progress(0.8, "Extracting and cleaning installation files")
+        # unzip_file usually handling extraction to execute_dir
+        # But gyan.dev zips have a root folder like 'ffmpeg-7.1-essentials_build'
+        # We need to handle that.
+        
+        extract_result_dir = Path(execute_dir) / "temp_ffmpeg_extract"
+        if extract_result_dir.exists():
+            shutil.rmtree(extract_result_dir)
+            
+        await unzip_file(zip_file_path, extract_result_dir, delete=True)
+        
+        # Find bin folder inside extract
+        bin_dir = None
+        for root, dirs, files in os.walk(extract_result_dir):
+            if "bin" in dirs:
+                bin_dir = Path(root) / "bin"
+                break
+        
+        if bin_dir and (bin_dir / "ffmpeg.exe").exists():
+            # Move contents of bin to local ffmpeg folder or move bin folder itself
+            # Expected structure: execute_dir/ffmpeg/ffmpeg.exe
+            if not os.path.exists(ffmpeg_path):
+                os.makedirs(ffmpeg_path, exist_ok=True)
+                
+            shutil.move(str(bin_dir / "ffmpeg.exe"), str(Path(ffmpeg_path) / "ffmpeg.exe"))
+            shutil.move(str(bin_dir / "ffplay.exe"), str(Path(ffmpeg_path) / "ffplay.exe"))
+            shutil.move(str(bin_dir / "ffprobe.exe"), str(Path(ffmpeg_path) / "ffprobe.exe"))
+            
+            # Cleanup temp
+            shutil.rmtree(extract_result_dir)
         else:
-            logger.error("Please manually install ffmpeg by yourself")
-            raise Exception("Failed to obtain the FFmpeg download address")
+             # Fallback if structure is flat or different
+             logger.warning("Could not find bin directory in extracted ffmpeg archive, attempting recursive search for ffmpeg.exe")
+             # searching recursively in extract_result_dir
+             found_ffmpeg = False
+             for root, _, files in os.walk(extract_result_dir):
+                 if "ffmpeg.exe" in files:
+                     shutil.move(str(Path(root) / "ffmpeg.exe"), str(Path(ffmpeg_path) / "ffmpeg.exe"))
+                     if "ffplay.exe" in files:
+                        shutil.move(str(Path(root) / "ffplay.exe"), str(Path(ffmpeg_path) / "ffplay.exe"))
+                     if "ffprobe.exe" in files:
+                        shutil.move(str(Path(root) / "ffprobe.exe"), str(Path(ffmpeg_path) / "ffprobe.exe"))
+                     found_ffmpeg = True
+                     break
+             
+             shutil.rmtree(extract_result_dir)
+             if not found_ffmpeg:
+                 raise Exception("Could not find ffmpeg.exe in downloaded archive")
+
+        await update_progress(0.9, "Configuring FFmpeg environment variables")
+        os.environ["PATH"] = ffmpeg_path + os.pathsep + os.environ.get("PATH")
+        
+        # Verify
+        result = subprocess.run([os.path.join(ffmpeg_path, "ffmpeg.exe"), "-version"], capture_output=True, startupinfo=startupinfo)
+        if result.returncode == 0:
+            logger.success("FFmpeg installation was successful")
+            return True
+        else:
+            logger.error("ffmpeg installation failed validation.")
+            raise Exception("Validation failed")
+
     except Exception as e:
+        logger.error(f"FFmpeg install failed, {e}")
+        # Clean up zip if it exists and failed
+        if 'zip_file_path' in locals() and Path(zip_file_path).exists():
+            os.remove(zip_file_path)
         raise RuntimeError(f"FFmpeg install failed, {e}") from None
 
 

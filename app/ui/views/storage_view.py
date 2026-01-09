@@ -362,7 +362,8 @@ class StoragePage(BasePage):
         await self.update_file_list()
         
         # Run actual logic
-        await self.app.page.run_task(self._do_identify_bg, file_path)
+        # Run actual logic
+        self.app.page.run_task(self._do_identify_bg, file_path)
 
     async def _do_identify_bg(self, file_path):
         try:
@@ -668,8 +669,29 @@ class StoragePage(BasePage):
         await self.update_file_list()
         self.content.update()
 
+    async def open_external_player(self, file_path):
+        """Open file with system default player"""
+        try:
+            if self.app.page.platform == "windows":
+                os.startfile(file_path)
+            elif self.app.page.platform == "macos":
+                import subprocess
+                subprocess.run(["open", file_path])
+            else: # linux
+                import subprocess
+                subprocess.run(["xdg-open", file_path])
+            await self.app.snack_bar.show_snack_bar(self._.get("opened_external", "Opened in system player"))
+        except Exception as e:
+            logger.error(f"Failed to open external player: {e}")
+            await self.app.snack_bar.show_snack_bar(f"Failed to open: {e}")
+
     async def preview_file(self, file_path, room_url=None):
         import urllib.parse
+        
+        # Check setting: Use System Player
+        if self.app.settings.user_config.get("use_system_player", False) and not self.app.page.web:
+             await self.open_external_player(file_path)
+             return
 
         from ..components.business.video_player import VideoPlayer
 

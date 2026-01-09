@@ -1,6 +1,14 @@
+import sys
+import os
+
+# Ensure local libs are prioritized
+execute_dir = os.path.split(os.path.realpath(sys.argv[0]))[0]
+libs_path = os.path.join(execute_dir, "libs")
+if os.path.exists(libs_path):
+    sys.path.insert(0, libs_path)
+
 import argparse
 import multiprocessing
-import os
 
 import flet as ft
 from dotenv import load_dotenv

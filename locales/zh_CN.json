@@ -413,11 +413,16 @@
     "installed": "已安装",
     "missing": "未安装",
     "builtin": "内置",
+    "python_libs": "Python 运行库",
     "system": "系统",
     "reinstall": "重新安装",
+    "install_now": "立即安装",
     "check_update": "检查更新",
     "install_success": "安装成功",
-    "install_failed": "安装失败"
+    "install_failed": "安装失败",
+    "checking_reqs": "正在检查 requirements.txt...",
+    "installing_libs": "正在安装依赖库 (可能需要几分钟)...",
+    "install_complete": "安装完成"
   },
   "about_page": {
     "about_project": "关于本程序",

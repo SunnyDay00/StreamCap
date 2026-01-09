@@ -90,6 +90,18 @@ class LocalSTTService:
         punc_path = os.path.join(self.models_dir, MODELS["punc"].split("/")[-1])
 
         logger.info("Loading Local STT pipeline...")
+        
+        # Optimize CPU usage to prevent UI freeze
+        # Limit torch threads to 50% of available cores, max 4
+        try:
+            import torch
+            num_cores = os.cpu_count() or 2
+            num_threads = max(1, min(4, num_cores // 2))
+            torch.set_num_threads(num_threads)
+            logger.info(f"Set PyTorch threads to {num_threads} (Total cores: {num_cores})")
+        except Exception as e:
+            logger.warning(f"Failed to set PyTorch threads: {e}")
+
         from funasr import AutoModel
 
         self.model_pipeline = AutoModel(

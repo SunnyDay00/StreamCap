@@ -40,13 +40,19 @@ class SettingsPage(PageBase):
         self.delay_handler = DelayedTaskExecutor(self.app, self)
         self.load_language()
         self.init_unsaved_changes()
+        self.installing_states = {}
         self.page.on_keyboard_event = self.on_keyboard
 
     async def load(self):
         try:
             self.content_area.clean()
             language = self.app.language_manager.language
-            self._ = language["settings_page"] | language["video_quality"] | language["base"]
+            self._ = (
+                language["settings_page"] 
+                | language["video_quality"] 
+                | language["base"] 
+                | language.get("install_manager", {})
+            )
             self.tab_recording = self.create_recording_settings_tab()
             self.tab_push = self.create_push_settings_tab()
             self.tab_cookies = self.create_cookies_settings_tab()
@@ -751,100 +757,129 @@ class SettingsPage(PageBase):
         async def check_dependencies(e=None):
             self.dep_status_container.controls.clear()
             
-            components = ["FFmpeg", "Node.js"]
+            components = ["FFmpeg", "Node.js", "Python Libs"]
             for comp_name in components:
-                status = await self.app.install_manager.get_component_status(comp_name)
-                if not status:
-                    continue
-                
-                is_installed = status["installed"]
-                color = ft.Colors.GREEN if is_installed else ft.Colors.RED
-                status_text = self._["installed"] if is_installed else self._["missing"]
-                icon = ft.icons.CHECK_CIRCLE if is_installed else ft.icons.CANCEL
-                
-                path_info = status.get("path", "N/A")
-                if status.get("is_local"):
-                     path_info += f" ({self._['builtin']})"
-                else:
-                     path_info += f" ({self._['system']})"
-                     
-                card_content = ft.Column([
-                    ft.Row([
-                        ft.Icon(icon, color=color, size=30),
-                        ft.Text(status["name"], size=20, weight=ft.FontWeight.BOLD, expand=True),
-                        ft.Container(
-                            content=ft.Text(status_text, color=ft.Colors.WHITE, size=12),
-                            bgcolor=color,
-                            padding=5,
-                            border_radius=5
-                        )
-                    ]),
-                    ft.Divider(),
-                    ft.Row([ft.Text(f"{self._['version']}: ", weight=ft.FontWeight.BOLD), ft.Text(status.get("version", "N/A"))]),
-                    ft.Row([ft.Text(f"{self._['path']}: ", weight=ft.FontWeight.BOLD), ft.Text(path_info, size=12, overflow=ft.TextOverflow.ELLIPSIS, expand=True)]),
-                ])
-                
-                action_row = ft.Row([
-                    ft.ElevatedButton(
-                        text=self._["reinstall"] if is_installed else self._["install_now"],
-                        icon=ft.icons.DOWNLOAD,
-                        on_click=lambda e, name=comp_name: self.app.page.run_task(install_dependency, name)
-                    )
-                ], alignment=ft.MainAxisAlignment.END)
-                
-                card_content.controls.append(ft.Divider())
-                card_content.controls.append(action_row)
+                try:
+                    # Check if currently installing
+                    install_state = self.installing_states.get(comp_name)
+                    
+                    if install_state:
+                         # Render Installing State
+                         card_content = ft.Column([
+                            ft.Row([
+                                ft.ProgressRing(width=30, height=30),
+                                ft.Text(f"{self._.get('installing_libs', 'Installing...')} ({install_state.get('progress_pct', 0)}%)", size=16, weight=ft.FontWeight.BOLD, expand=True),
+                            ]),
+                            ft.Divider(),
+                            ft.Text(install_state.get("status", ""), size=12, color=ft.Colors.GREY_400),
+                            ft.ProgressBar(value=install_state.get("progress", 0), color=ft.Colors.BLUE),
+                        ])
+                    else:
+                        # Render Normal State
+                        status = await self.app.install_manager.get_component_status(comp_name)
+                        if not status:
+                            continue
+                        
+                        is_installed = status["installed"]
+                        color = ft.Colors.GREEN if is_installed else ft.Colors.RED
+                        status_text = self._["installed"] if is_installed else self._["missing"]
+                        icon = ft.icons.CHECK_CIRCLE if is_installed else ft.icons.CANCEL
+                        
+                        path_info = status.get("path", "N/A")
+                        if status.get("is_local"):
+                             path_info += f" ({self._['builtin']})"
+                        else:
+                             path_info += f" ({self._['system']})"
+                             
+                        card_content = ft.Column([
+                            ft.Row([
+                                ft.Icon(icon, color=color, size=30),
+                                ft.Text(status["name"], size=20, weight=ft.FontWeight.BOLD, expand=True),
+                                ft.Container(
+                                    content=ft.Text(status_text, color=ft.Colors.WHITE, size=12),
+                                    bgcolor=color,
+                                    padding=5,
+                                    border_radius=5
+                                )
+                            ]),
+                            ft.Divider(),
+                            ft.Row([ft.Text(f"{self._['version']}: ", weight=ft.FontWeight.BOLD), ft.Text(status.get("version", "N/A"))]),
+                            ft.Row([ft.Text(f"{self._['path']}: ", weight=ft.FontWeight.BOLD), ft.Text(path_info, size=12, overflow=ft.TextOverflow.ELLIPSIS, expand=True)]),
+                        ])
+                        
+                        action_row = ft.Row([
+                            ft.ElevatedButton(
+                                text=self._["reinstall"] if is_installed else self._["install_now"],
+                                icon=ft.icons.DOWNLOAD,
+                                on_click=lambda e, name=comp_name: self.app.page.run_task(install_dependency, name)
+                            )
+                        ], alignment=ft.MainAxisAlignment.END)
+                        
+                        card_content.controls.append(ft.Divider())
+                        card_content.controls.append(action_row)
 
-                self.dep_status_container.controls.append(
-                    ft.Card(
-                        content=ft.Container(
-                            content=card_content,
-                            padding=15
+                    self.dep_status_container.controls.append(
+                        ft.Card(
+                            content=ft.Container(
+                                content=card_content,
+                                padding=15
+                            )
                         )
                     )
-                )
+                except Exception as ex:
+                    logger.error(f"Error checking dependency {comp_name}: {ex}")
+                    self.dep_status_container.controls.append(ft.Text(f"Error: {comp_name} - {ex}", color=ft.Colors.RED))
             self.dep_status_container.update()
 
         async def install_dependency(name):
             from ...scripts.ffmpeg_install import install_ffmpeg
             from ...scripts.node_install import install_nodejs
+            from ...scripts.pylib_install import install_pylibs
             
             install_func = None
             if name == "FFmpeg":
                 install_func = install_ffmpeg
             elif name == "Node.js":
                 install_func = install_nodejs
+            elif name == "Python Libs":
+                install_func = install_pylibs
                 
             if install_func:
-                self.app.page.show_snack_bar(ft.SnackBar(content=ft.Text(f"Starting {name} installation...")))
+                logger.info(f"Install requested for: {name}")
+                
+                # Initialize state
+                self.installing_states[name] = {"progress": 0, "status": "Starting...", "progress_pct": 0}
+                await check_dependencies() # Refresh to show progress bar
                 
                 async def progress_callback(progress, status):
-                    if progress_dialog.open:
-                        pb.value = progress
-                        status_txt.value = status
-                        progress_dialog.update()
-
-                pb = ft.ProgressBar(width=300)
-                status_txt = ft.Text("Initializing...")
-                progress_dialog = ft.AlertDialog(
-                    title=ft.Text(f"Installing {name}"),
-                    content=ft.Column([status_txt, pb], height=100, tight=True),
-                    modal=True,
-                )
-                self.app.page.open(progress_dialog)
-                self.app.page.update()
-                
-                try:
-                    res = await install_func(progress_callback)
-                    self.app.page.close(progress_dialog)
-                    if res:
-                        await self.app.snack_bar.show_snack_bar(self._["install_success"], bgcolor=ft.Colors.GREEN)
+                    # For PyLibs we expect status strings, which we can now control via args
+                    # For others (ffmpeg/node), status is English text. 
+                    if name in self.installing_states:
+                        self.installing_states[name]["progress"] = progress
+                        self.installing_states[name]["progress_pct"] = int(progress * 100)
+                        self.installing_states[name]["status"] = status
                         await check_dependencies()
+
+                try:
+                    # Pass labels if supported (only pylibs for now)
+                    if name == "Python Libs":
+                        res = await install_func(progress_callback, labels=self._)
                     else:
-                        await self.app.snack_bar.show_snack_bar(self._["install_failed"], bgcolor=ft.Colors.RED)
+                        res = await install_func(progress_callback) # Others take callback only
+                        
+                    if res:
+                        self.app.page.open(ft.SnackBar(content=ft.Text(self._["install_success"]), bgcolor=ft.Colors.GREEN))
+                    else:
+                        self.app.page.open(ft.SnackBar(content=ft.Text(self._["install_failed"]), bgcolor=ft.Colors.RED))
                 except Exception as ex:
-                    self.app.page.close(progress_dialog)
-                    await self.app.snack_bar.show_snack_bar(f"{self._['install_failed']}: {ex}", bgcolor=ft.Colors.RED)
+                    self.app.page.open(ft.SnackBar(content=ft.Text(f"{self._['install_failed']}: {ex}"), bgcolor=ft.Colors.RED))
+                finally:
+                    # Clear state
+                    if name in self.installing_states:
+                        del self.installing_states[name]
+                    # Invalidate cache so we get fresh status
+                    self.app.install_manager.invalidate_cache(name)
+                    await check_dependencies()
 
         self.app.page.run_task(check_dependencies)
 
@@ -862,7 +897,7 @@ class SettingsPage(PageBase):
                     ft.ElevatedButton(
                         self._["check_update"],
                         icon=ft.icons.REFRESH,
-                        on_click=check_dependencies
+                        on_click=lambda e: self.app.page.run_task(check_dependencies)
                     )
                  ], alignment=ft.MainAxisAlignment.CENTER)
             ],

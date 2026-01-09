@@ -413,11 +413,16 @@
     "installed": "Installed",
     "missing": "Missing",
     "builtin": "Built-in",
+    "python_libs": "Python Runtime Libs",
     "system": "System",
     "reinstall": "Reinstall",
+    "install_now": "Install Now",
     "check_update": "Check Update",
     "install_success": "Install Success",
-    "install_failed": "Install Failed"
+    "install_failed": "Install Failed",
+    "checking_reqs": "Checking requirements.txt...",
+    "installing_libs": "Installing dependencies...",
+    "install_complete": "Installation complete"
   },
   "about_page": {
     "about_project": "About This Application",
