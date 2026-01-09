@@ -132,10 +132,59 @@ class DouyuHandler(PlatformHandler):
 
     @trace_error_decorator
     async def get_stream_info(self, live_url: str) -> StreamData:
-        if not self.live_stream:
-            self.live_stream = streamget.DouyuLiveStream(proxy_addr=self.proxy, cookies=self.cookies)
-        json_data = await self.live_stream.fetch_web_stream_data(url=live_url)
-        return await self.live_stream.fetch_stream_url(json_data, self.record_quality)
+        try:
+             # 1. Quick check with betard API (no regex needed)
+             room_id = live_url.split("/")[-1]
+             if "?" in room_id:
+                 room_id = room_id.split("?")[0]
+             
+             api_url = f"https://www.douyu.com/betard/{room_id}"
+             headers = {
+                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                 "Referer": live_url
+             }
+             
+             # Use generic httpx client
+             import httpx
+             async with httpx.AsyncClient(timeout=5.0) as client:
+                 resp = await client.get(api_url, headers=headers)
+                 if resp.status_code == 200:
+                     data = resp.json()
+                     if 'room' in data:
+                         room_info = data['room']
+                         is_live = room_info.get('show_status') == 1
+                         anchor_name = room_info.get('nickname', 'Douyu Anchor')
+                         title = room_info.get('room_name', 'Douyu Live')
+                         
+                         if not is_live:
+                             # Return offline immediately without running broken regex
+                             return StreamData(
+                                 platform=self.platform,
+                                 anchor_name=anchor_name,
+                                 room_title=title,
+                                 is_live=False,
+                                 record_url=live_url
+                             )
+        except Exception as e:
+             # Ignore betard errors and fall through to streamget
+             pass
+
+        # 2. Try streamget (broken regex might crash here)
+        try:
+            if not self.live_stream:
+                self.live_stream = streamget.DouyuLiveStream(proxy_addr=self.proxy, cookies=self.cookies)
+            json_data = await self.live_stream.fetch_web_stream_data(url=live_url)
+            return await self.live_stream.fetch_stream_url(json_data, self.record_quality)
+        except AttributeError as e:
+            if "'NoneType' object has no attribute 'group'" in str(e):
+                 # Suppress known regex failure
+                 from ....utils.logger import logger
+                 logger.warning(f"Douyu parser regex mismatch (likely offline or layout changed): {live_url}")
+                 return StreamData(platform=self.platform, is_live=False, record_url=live_url)
+            raise e
+        except Exception as e:
+            # Let decorator handle other errors, or swallow?
+            raise e
 
 
 class YYHandler(PlatformHandler):

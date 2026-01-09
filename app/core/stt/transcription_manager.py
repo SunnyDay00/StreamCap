@@ -7,8 +7,11 @@ class TranscriptionManager:
         self.processing_files = set()
         # No longer loading JSON data
     
+    def _normalize_path(self, file_path):
+        return os.path.normpath(os.path.abspath(file_path))
+
     def is_processing(self, file_path):
-        return file_path in self.processing_files
+        return self._normalize_path(file_path) in self.processing_files
 
     AI_SUFFIX = "_AI"
 
@@ -113,7 +116,8 @@ class TranscriptionManager:
         Transcribe a file using LocalSTTService and optional AI optimization.
         Returns the transcribed text.
         """
-        self.processing_files.add(file_path)
+        norm_path = self._normalize_path(file_path)
+        self.processing_files.add(norm_path)
         try:
             from ...core.stt.local_stt import LocalSTTService
             from ...core.ai.ai_optimizer import AITextOptimizer
@@ -145,6 +149,6 @@ class TranscriptionManager:
             self.set_text(file_path, text_result, metadata={"ai_optimized": is_optimized} if is_optimized else None)
             return text_result
         finally:
-            if file_path in self.processing_files:
-                self.processing_files.discard(file_path)
+            if norm_path in self.processing_files:
+                self.processing_files.discard(norm_path)
 

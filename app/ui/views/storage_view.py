@@ -84,6 +84,10 @@ class StoragePage(BasePage):
             self.path_display.value = self._["current_path"] + ":" + self.current_path
             self.file_list.controls.clear()
 
+            # Navigation / Tool Bar
+            nav_controls = []
+            
+            # Back Button
             if self.current_path != self.root_path:
                 back_button = ft.ElevatedButton(
                     self._["go_back"],
@@ -91,14 +95,47 @@ class StoragePage(BasePage):
                     on_click=lambda _: self.app.page.run_task(self.navigate_to_parent)
                 )
                 if self.app.is_mobile:
-                    back_item = ft.ListTile(
+                    # Mobile simplified view
+                    # For mobile, we might just stick to list tile, but for now specific logic:
+                     back_item = ft.ListTile(
                         leading=ft.Icon(ft.icons.ARROW_BACK, color=ft.colors.BLUE),
                         title=ft.Text(self._["go_back"]),
                         on_click=lambda _: self.app.page.run_task(self.navigate_to_parent),
                     )
-                    self.file_list.controls.append(back_item)
+                     nav_controls.append(back_item)
                 else:
-                    self.file_list.controls.append(back_button)
+                    nav_controls.append(back_button)
+            
+            if not self.app.is_mobile: 
+                 # Desktop Navigation Row
+                 # Add Spacer
+                 nav_controls.append(ft.Container(expand=True))
+                 
+                 # Refresh Button
+                 refresh_btn = ft.TextButton(
+                     self._.get("refresh_interface", "Refresh"),
+                     icon=ft.icons.REFRESH,
+                     on_click=lambda _: self.app.page.run_task(self.update_file_list)
+                 )
+                 nav_controls.append(refresh_btn)
+                 
+                 # Wrap in row
+                 # Note: If we had mobile item, nav_controls has a ListTile. We shouldn't put ListTile in Row like this.
+                 # Splitting logic clean:
+                 
+                 if nav_controls:
+                     # Filter out non-controls if any
+                     final_controls = [c for c in nav_controls if isinstance(c, ft.Control)]
+                     
+                     nav_row = ft.Row(
+                         controls=final_controls,
+                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN
+                     )
+                     self.file_list.controls.append(nav_row)
+            else:
+                 # Mobile: Just append back item if exists
+                 for c in nav_controls:
+                     self.file_list.controls.append(c)
 
             exists, is_empty = await self.check_directory()
             if not exists or is_empty:

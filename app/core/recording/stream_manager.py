@@ -522,9 +522,9 @@ class LiveStreamRecorder:
                                  logger.error(f"Failed to restore segment {f}: {e}")
                          
                  # Update save_file_path to the 'final' pattern (without .part) for next steps
-                 # Update save_file_path to the 'final' pattern (without .part) for next steps
                  save_file_path = final_pattern
                  current_processing_path = final_pattern
+                 final_file_paths = found_files  # <--- CRITICAL FIX: Track found files
              else:
                  logger.warning(f"Directory missing for segmented: {save_file_path}")
                  return
@@ -558,15 +558,16 @@ class LiveStreamRecorder:
             if self.segment_record:
                 file_paths = utils.get_file_paths(os.path.dirname(save_file_path))
                 prefix = os.path.basename(save_file_path).rsplit("_", maxsplit=1)[0]
+                converted_paths = []
                 for path in file_paths:
                     if prefix in path:
                          await self._do_converts_mp4(path, self.user_config.get("delete_original", True))
                          # Add converted path to list
-                         final_file_paths.append(os.path.splitext(path)[0] + ".mp4")
+                         converted_paths.append(os.path.splitext(path)[0] + ".mp4")
                 
-                # Remove original TS path if replaced by multiple MP4s (or just update list)
-                if current_processing_path in final_file_paths:
-                    final_file_paths.remove(current_processing_path)
+                # Replace final_file_paths with the actual converted files
+                if converted_paths:
+                    final_file_paths = converted_paths
                     
             else:
                 await self._do_converts_mp4(save_file_path, self.user_config.get("delete_original", True))
@@ -641,9 +642,17 @@ class LiveStreamRecorder:
                      if is_valid:
                          logger.info(f"File integrity verified. Auto-identifying: {final_file_path}")
                          try:
+                            # Create task to allow state update before UI refresh
+                            task = asyncio.create_task(self.app.transcription_manager.transcribe_file(final_file_path))
+                            
+                            # Yield control briefly to ensure transcribe_file adds file to processing set
+                            await asyncio.sleep(0.2)
+                            
                             # Trigger generic storage update (start state)
                             self.app.page.pubsub.send_all("storage_update")
-                            await self.app.transcription_manager.transcribe_file(final_file_path)
+                            
+                            # Wait for transcription to complete
+                            await task
                          except Exception as e:
                             logger.error(f"Auto-identify failed: {e}")
                          finally:
@@ -732,13 +741,14 @@ class LiveStreamRecorder:
 
 
 
-    async def check_file_integrity(self, file_path: str, timeout: int = 10) -> bool:
-        """Check if the video file is valid using ffmpeg"""
+    async def check_file_integrity(self, file_path: str, timeout: int = 60) -> bool:
+        """Check if the video file is valid using ffmpeg (fast remux check)"""
         try:
              # Wait a bit for file handle release
              await asyncio.sleep(2)
              
-             cmd = ["ffmpeg", "-v", "error", "-i", file_path, "-f", "null", "-"]
+             # Use -c copy for faster check (verifies container structure without full decode)
+             cmd = ["ffmpeg", "-v", "error", "-i", file_path, "-c", "copy", "-f", "null", "-"]
              process = await asyncio.create_subprocess_exec(
                 *cmd,
                 stdout=asyncio.subprocess.PIPE,
@@ -749,13 +759,18 @@ class LiveStreamRecorder:
                  _, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
                  if process.returncode == 0:
                      return True
-                 logger.warning(f"File integrity check failed for {file_path}: {stderr.decode()}")
-                 return False
+                 else:
+                     err_msg = stderr.decode() if stderr else 'Unknown ffmpeg error'
+                     logger.warning(f"File integrity check failed for {file_path}: {err_msg}")
+                     return False
              except asyncio.TimeoutError:
-                 logger.warning(f"File integrity check timed out for {file_path}")
+                 logger.warning(f"File integrity check timed out ({timeout}s): {file_path}")
                  if process.returncode is None:
                      process.kill()
                  return False
+        except Exception as e:
+            logger.error(f"File integrity check error: {e}")
+            return False
         except Exception as e:
             logger.error(f"Error checking file integrity: {e}")
             return False

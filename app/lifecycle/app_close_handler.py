@@ -8,14 +8,22 @@ from ..utils.logger import logger
 from .tray_manager import TrayManager
 
 
-def _safe_destroy_window(page):
+async def _safe_destroy_window(page):
     try:
         page.update()
-        to_cancel = asyncio.all_tasks(page.loop)
+        # Filter out the current task to avoid cancelling itself immediately if meaningful
+        current_task = asyncio.current_task(page.loop)
+        to_cancel = [t for t in asyncio.all_tasks(page.loop) if t is not current_task]
+        
         if not to_cancel:
             return
+            
         for task in to_cancel:
             task.cancel()
+            
+        # Allow tasks to clean up
+        await asyncio.gather(*to_cancel, return_exceptions=True)
+        
     except Exception as ex:
         logger.error(f"close window error: {ex}")
     finally:
@@ -80,7 +88,7 @@ async def handle_app_close(page: ft.Page, app, save_progress_overlay) -> None:
         else:
             if not getattr(app, "is_web_mode", False) and hasattr(app, "tray_manager"):
                 app.tray_manager.stop()
-            _safe_destroy_window(page)
+            await _safe_destroy_window(page)
 
         await close_dialog(e)
 
