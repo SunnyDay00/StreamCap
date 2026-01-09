@@ -6,6 +6,7 @@ __pycache__/
 # models
 assets/models
 
+runtime
 
 # C extensions
 *.so
