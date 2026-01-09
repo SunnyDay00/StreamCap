@@ -61,6 +61,10 @@ class RecordingManager:
             recording.loop_time_seconds = self.loop_time_seconds
             recording.update_title(self._[recording.quality])
             recording.showed_checking_status = True
+            if recording.monitor_status:
+                recording.monitor_status = False
+                recording.display_title = f"[{self._['monitor_stopped']}] {recording.title}"
+                recording.status_info = RecordingStatus.STOPPED_MONITORING
 
     async def add_recording(self, recording):
         with GlobalRecordingState.lock:
@@ -108,7 +112,10 @@ class RecordingManager:
         if not recording.monitor_status:
             recording.is_checking = True
             recording.is_live = False
+            recording.is_checking = True
+            recording.is_live = False
             recording.showed_checking_status = False
+            recording.manually_stopped = False
             await self._update_recording(
                 recording=recording,
                 monitor_status=True,
@@ -230,7 +237,7 @@ class RecordingManager:
         else:
             logger.info("Periodic live check task already running globally, skipping initialization")
 
-    async def check_if_live(self, recording: Recording):
+    async def check_if_live(self, recording: Recording, force_check: bool = False):
         """Check if the live stream is available, fetch stream data and update is_live status."""
 
         # recording.manually_stopped = False # Don't reset this blindly, respect user decision
@@ -242,7 +249,7 @@ class RecordingManager:
             logger.debug(f"Skip check_if_live because recorder is active: {recording.url}")
             return
 
-        if not recording.monitor_status:
+        if not recording.monitor_status and not force_check:
             recording.display_title = f"[{self._['monitor_stopped']}] {recording.title}"
             recording.status_info = RecordingStatus.STOPPED_MONITORING
             recording.is_checking = False
@@ -312,10 +319,26 @@ class RecordingManager:
             logger.error(f"Fetch stream data failed: {recording.url}")
             recording.is_checking = False
             recording.status_info = RecordingStatus.LIVE_STATUS_CHECK_ERROR
+            
+            if force_check:
+                current_time = datetime.now().strftime("%H:%M")
+                recording.check_status_text = f"{current_time} : {self._['LIVE_STATUS_CHECK_ERROR']}"
+                self.app.page.run_task(self.app.record_card_manager.update_card, recording)
+
             if recording.monitor_status:
                 self.app.page.run_task(self.app.record_card_manager.update_card, recording)
                 self.app.page.pubsub.send_others_on_topic("update", recording)
             return
+            
+        if force_check:
+             current_time = datetime.now().strftime("%H:%M")
+             # Use localized strings if available
+             live_str = self._['is_live'] if stream_info.is_live else self._.get('is_not_live', 'Not Live')
+             recording.check_status_text = f"{current_time} : {live_str}"
+             # Don't update card here, let the subsequent logic handle it or ensure update
+             # But subsequent logic might be skipped if not monitoring?
+             if not recording.monitor_status:
+                 self.app.page.run_task(self.app.record_card_manager.update_card, recording)
         if self.settings.user_config.get("remove_emojis"):
             stream_info.anchor_name = utils.clean_name(stream_info.anchor_name, self._["live_room"])
 
@@ -342,7 +365,7 @@ class RecordingManager:
             msg_manager = message_pusher.MessagePusher(self.settings)
             user_config = self.settings.user_config
             if (msg_manager.should_push_message(self.settings, recording, message_type='start')
-                    and not recording.notified_live_start):
+                    and not recording.notified_live_start and recording.monitor_status):
                 push_content = self._["push_content"]
                 begin_push_message_text = user_config.get("custom_stream_start_content")
                 if begin_push_message_text:
@@ -359,7 +382,7 @@ class RecordingManager:
                 )
                 recording.notified_live_start = True
 
-            if not recording.only_notify_no_record and not recording.manually_stopped:
+            if not recording.only_notify_no_record and not recording.manually_stopped and recording.monitor_status:
                 recording.status_info = RecordingStatus.PREPARING_RECORDING
                 recording.loop_time_seconds = self.loop_time_seconds
                 self.start_update(recording)

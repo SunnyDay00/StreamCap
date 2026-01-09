@@ -71,6 +71,12 @@ class RecordingCardManager:
             on_click=lambda e, rec=recording: self.app.page.run_task(self.preview_video_button_on_click, e, rec),
         )
 
+        check_live_button = ft.IconButton(
+            icon=ft.Icons.SENSORS,
+            tooltip=self._.get("check_live", "Check Live Status"), 
+            on_click=lambda e, rec=recording: self.app.page.run_task(self.check_live_button_click, e, rec),
+        )
+
         monitor_button = ft.IconButton(
             icon=self.get_icon_for_monitor_state(recording),
             tooltip=self.get_tip_for_monitor_state(recording),
@@ -109,8 +115,16 @@ class RecordingCardManager:
 
         status_label = self.create_status_label(recording)
 
+        check_status_label = self.create_check_status_label(recording)
+        
+        row_controls = [display_title_label]
+        if check_status_label:
+            row_controls.append(check_status_label)
+        if status_label:
+            row_controls.append(status_label)
+
         title_row = ft.Row(
-            [display_title_label, status_label] if status_label else [display_title_label],
+            row_controls,
             alignment=ft.MainAxisAlignment.START,
             spacing=5,
             tight=True,
@@ -130,6 +144,7 @@ class RecordingCardManager:
                             preview_button,
                             edit_button,
                             delete_button,
+                            check_live_button,
                             monitor_button
                         ],
                         spacing=3,
@@ -159,7 +174,26 @@ class RecordingCardManager:
             "edit_button": edit_button,
             "monitor_button": monitor_button,
             "status_label": status_label,
+            "check_status_label": check_status_label,
         }
+
+    def create_check_status_label(self, recording: Recording):
+        if not hasattr(recording, "check_status_text") or not recording.check_status_text:
+            return None
+            
+        return ft.Container(
+            content=ft.Text(
+                recording.check_status_text,
+                color=ft.Colors.WHITE,
+                size=12,
+                weight=ft.FontWeight.BOLD
+            ),
+            bgcolor=ft.Colors.GREEN_600 if self._['is_live'] in recording.check_status_text else ft.Colors.GREY_600,
+            border_radius=5,
+            padding=ft.padding.symmetric(horizontal=5),
+            height=26,
+            alignment=ft.alignment.center,
+        )
 
     def get_card_background_color(self, recording: Recording):
         is_dark_mode = self.app.page.theme_mode == ft.ThemeMode.DARK
@@ -204,22 +238,29 @@ class RecordingCardManager:
                     recording_card["display_title_label"].weight = RecordingCardState.get_title_weight(recording)
 
                 new_status_label = self.create_status_label(recording)
+                new_check_status_label = self.create_check_status_label(recording)
 
                 if recording_card["card"] and recording_card["card"].content and recording_card["card"].content.content:
                     title_row = recording_card["card"].content.content.controls[0]
                     title_row.alignment = ft.MainAxisAlignment.START
                     title_row.spacing = 5
                     title_row.tight = True
-
-                    # Update the status label if it exists
+                    
+                    # Rebuild control list: Title -> CheckStatus -> Status
+                    # We assume index 0 is always title
+                    # Just keep title and rebuild the rest
+                    
+                    display_title_label = title_row.controls[0]
+                    title_row.controls.clear()
+                    title_row.controls.append(display_title_label)
+                    
+                    if new_check_status_label:
+                        title_row.controls.append(new_check_status_label)
+                        
                     if new_status_label:
-                        if len(title_row.controls) > 1:
-                            title_row.controls[1] = new_status_label
-                        else:
-                            title_row.controls.append(new_status_label)
-                    else:
-                        if len(title_row.controls) > 1:
-                            title_row.controls.pop()
+                        title_row.controls.append(new_status_label)
+
+
 
                 if recording_card.get("duration_label"):
                     recording_card["duration_label"].value = self.app.record_manager.get_duration(recording)
@@ -522,6 +563,14 @@ class RecordingCardManager:
 
     async def recording_card_on_click(self, _, recording: Recording):
         await self.on_card_click(recording)
+
+    async def check_live_button_click(self, _, recording: Recording):
+        await self.app.snack_bar.show_snack_bar(self._.get("checking", "Checking..."))
+        await self.app.record_manager.check_if_live(recording, force_check=True)
+        if recording.is_live:
+            await self.app.snack_bar.show_snack_bar(f"{recording.streamer_name} {self._['is_live']}", bgcolor=ft.Colors.GREEN)
+        else:
+             await self.app.snack_bar.show_snack_bar(f"{recording.streamer_name} {self._.get('is_not_live', 'Not Live')}")
 
     async def subscribe_update_card(self, _, recording: Recording):
         await self.update_card(recording)

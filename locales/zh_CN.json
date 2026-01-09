@@ -71,7 +71,10 @@
     "platform_filter": "平台筛选",
     "platform_sort": "平台排序",
     "operations": "操作",
-    "filter": "筛选"
+    "filter": "筛选",
+    "batch_check_unmonitored": "检测所有未监控直播间状态",
+    "no_unmonitored": "没有未监控的直播间",
+    "start_checking": "正在检测未监控直播间状态..."
   },
   "recording_dialog": {
     "input_live_link": "输入直播间地址",
@@ -134,7 +137,9 @@
     "notify": "通知",
     "live_recording_stopped_message": "直播录制已结束！",
     "live_recording_started_message": "直播正在进行中",
-    "not_config_tip": "未配置消息推送渠道"
+    "not_config_tip": "未配置消息推送渠道",
+    "is_not_live": "未开播",
+    "check_live": "检测直播状态"
   },
   "stream_manager": {
     "record_stream_error": "直播源录制出错",
@@ -561,12 +566,13 @@
   "save_progress_overlay": {
     "force_close": "强制关闭",
     "force_close_tooltip": "立即关闭程序（可能导致视频损坏）",
-    "force_close_warning": "请谨慎操作，强制关闭程序可能导致视频文件损坏。",
+    "force_close_warning": "请谨慎操作，强制关闭导致视频损坏、识别任务失败或文件丢失。",
     "force_closing": "正在强制关闭...",
     "saving_recording": "正在保存录制文件..."
   },
   "app_close_handler": {
     "saving_recordings": "正在保存 {active_recordings_count} 个录制内容，请稍候...",
+    "waiting_processing": "正在等待 {count} 个处理任务完成(转码/识别等)，请稍候...",
     "confirm_exit": "确认退出",
     "confirm_exit_content": "您确定要退出程序吗？",
     "minimize_to_tray": "最小化至托盘",

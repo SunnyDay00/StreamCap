@@ -71,7 +71,10 @@
     "platform_filter": "Platform Filter",
     "platform_sort": "Platform Sort",
     "operations": "Operations",
-    "filter": "Filter"
+    "filter": "Filter",
+    "batch_check_unmonitored": "Check All Unmonitored",
+    "no_unmonitored": "No unmonitored recordings",
+    "start_checking": "Checking unmonitored status..."
   },
   "recording_dialog": {
     "input_live_link": "Enter Live Room URL",
@@ -134,7 +137,9 @@
     "notify": "Notify",
     "live_recording_stopped_message": "Live room recording has been stopped",
     "live_recording_started_message": "Live room recording has been started",
-    "not_config_tip": "Message push channel not configured"
+    "not_config_tip": "Message push channel not configured",
+    "is_not_live": "Not Live",
+    "check_live": "Check Live Status"
   },
     "stream_manager": {
     "record_stream_error": "Live streaming source recording error",
@@ -573,12 +578,13 @@
   "save_progress_overlay": {
     "force_close": "Force Close",
     "force_close_tooltip": "Force close the program (may result in video corruption)",
-    "force_close_warning": "This action may result in video corruption. Please proceed with caution.",
+    "force_close_warning": "Proceed with caution. Forced closing may cause video corruption, task failure, or data loss.",
     "force_closing": "Force closing...",
     "saving_recording": "Saving recording..."
   },
   "app_close_handler": {
     "saving_recordings": "Saving {active_recordings_count} recordings, please wait...",
+    "waiting_processing": "Waiting for {count} processing tasks (transcription/encoding) to complete, please wait...",
     "confirm_exit": "Confirm Exit",
     "confirm_exit_content": "Are you sure you want to exit the application?",
     "minimize_to_tray": "Minimize to Tray",

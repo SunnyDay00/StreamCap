@@ -151,6 +151,11 @@ class RecordingsPage(PageBase):
             ft.IconButton(icon=ft.Icons.ADD, tooltip=self._["add_record"], on_click=self.add_recording_on_click),
             ft.IconButton(icon=ft.Icons.REFRESH, tooltip=self._["refresh"], on_click=self.refresh_cards_on_click),
             ft.IconButton(
+                icon=ft.Icons.FACT_CHECK,
+                tooltip=self._.get("batch_check_unmonitored", "Check Unmonitored"),
+                on_click=self.batch_check_live_on_click
+            ),
+            ft.IconButton(
                 icon=ft.Icons.PLAY_ARROW,
                 tooltip=self._["batch_start"],
                 on_click=self.start_monitor_recordings_on_click,
@@ -618,6 +623,16 @@ class RecordingsPage(PageBase):
     async def stop_monitor_recordings_on_click(self, _):
         await self.app.record_manager.stop_monitor_recordings()
         await self.app.snack_bar.show_snack_bar(self._["stop_recording_success_tip"])
+
+    async def batch_check_live_on_click(self, _):
+        recordings = [r for r in self.app.record_manager.recordings if not r.monitor_status]
+        if not recordings:
+             await self.app.snack_bar.show_snack_bar(self._.get("no_unmonitored", "No unmonitored recordings"))
+             return
+        
+        await self.app.snack_bar.show_snack_bar(self._.get("start_checking", "Checking unmonitored status..."))
+        for rec in recordings:
+             self.page.run_task(self.app.record_manager.check_if_live, rec, force_check=True)
 
     async def delete_monitor_recordings_on_click(self, _):
         selected_recordings = await self.app.record_manager.get_selected_recordings()

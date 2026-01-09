@@ -45,6 +45,9 @@ async def handle_app_close(page: ft.Page, app, save_progress_overlay) -> None:
         await close_dialog(e)
 
     async def close_dialog_dismissed(e):
+        # Close the dialog first so overlay can be clearly seen
+        await close_dialog(e)
+        
         app.recording_enabled = False
         
         app.settings.user_config["last_route"] = page.route
@@ -62,18 +65,36 @@ async def handle_app_close(page: ft.Page, app, save_progress_overlay) -> None:
 
             def close_app():
                 try:
-                    # adjust wait time based on the number of recordings, at least 2 seconds
+                    # 1. Stop all monitor/recording manually first to prevent new ones
+                    if hasattr(app, "record_manager"):
+                        for rec in app.record_manager.recordings:
+                            if rec.monitor_status:
+                                pass
+
+                    # 2. Wait for Recordings (FFmpeg)
                     base_wait_time = max(2, min(active_recordings_count, 10))
                     logger.info(
                         f"waiting for {active_recordings_count} recordings to finish, waiting {base_wait_time} seconds")
 
                     time.sleep(base_wait_time)
 
-                    # check again if there are active processes
-                    remaining = len([p for p in app.process_manager.ffmpeg_processes if p.returncode is None])
-                    if remaining > 0:
-                        logger.info(f"still {remaining} recordings are not finished, waiting for extra time")
-                        time.sleep(min(remaining, 5))
+                    # check active recordings again
+                    while True:
+                        remaining_recs = len([p for p in app.process_manager.ffmpeg_processes if p.returncode is None])
+                        if remaining_recs == 0:
+                            break
+                        logger.info(f"still {remaining_recs} recordings active, waiting...")
+                        time.sleep(1)
+
+                    # 3. Wait for Transcription/Processing
+                    if hasattr(app, "transcription_manager"):
+                        while True:
+                            processing_count = len(app.transcription_manager.processing_files)
+                            if processing_count == 0:
+                                break
+                            
+                            logger.info(f"Waiting for {processing_count} transcription/processing tasks...")
+                            time.sleep(1)
 
                     time.sleep(0.5)
 
@@ -86,11 +107,35 @@ async def handle_app_close(page: ft.Page, app, save_progress_overlay) -> None:
 
             threading.Thread(target=close_app, daemon=True).start()
         else:
+            # Check for processing tasks even if no recordings
+            processing_count = 0
+            if hasattr(app, "transcription_manager"):
+                 processing_count = len(app.transcription_manager.processing_files)
+            
+            if processing_count > 0:
+                 # Show overlay with cancellable=True so user can force close if they want
+                 save_progress_overlay.show(_["waiting_processing"].format(count=processing_count), 
+                                       cancellable=True)
+                 page.update()
+                 
+                 def wait_processing():
+                     try:
+                        while True:
+                            p_count = len(app.transcription_manager.processing_files)
+                            if p_count == 0:
+                                break
+                            time.sleep(1)
+                     finally:
+                        if not getattr(app, "is_web_mode", False) and hasattr(app, "tray_manager"):
+                            app.tray_manager.stop()
+                        page.window.destroy()
+                 
+                 threading.Thread(target=wait_processing, daemon=True).start()
+                 return
+
             if not getattr(app, "is_web_mode", False) and hasattr(app, "tray_manager"):
                 app.tray_manager.stop()
             await _safe_destroy_window(page)
-
-        await close_dialog(e)
 
     async def close_dialog(_):
         close_confirm_dialog.open = False
