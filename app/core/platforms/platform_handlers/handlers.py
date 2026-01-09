@@ -1,4 +1,8 @@
+import hashlib
+import json
+import time
 import streamget
+import httpx
 
 from ....utils.utils import trace_error_decorator
 from .base import PlatformHandler, StreamData
@@ -127,11 +131,70 @@ class DouyuHandler(PlatformHandler):
         record_quality: str | None = None,
         platform: str | None = None,
     ) -> None:
-        super().__init__(proxy, cookies, record_quality, platform)
+        super().__init__(proxy, cookies, record_quality, platform or self.platform)
         self.live_stream: streamget.DouyuLiveStream | None = None
+
+    async def _fetch_stream_v3(self, rid: str, did: str = '10000000000000000000000000001501') -> dict:
+        """
+        Fetch stream URL using Douyu V3 API (Reverse engineered from web-encrypt.js).
+        """
+        enc_url = f"https://www.douyu.com/wgapi/livenc/liveweb/websec/getEncryption?did={did}"
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": f"https://www.douyu.com/{rid}"
+        }
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # 1. Get Encryption Key
+            resp = await client.get(enc_url, headers=headers)
+            resp.raise_for_status()
+            key_resp = resp.json()
+            if key_resp.get('error') != 0:
+                raise ValueError(f"Douyu Key Error: {key_resp.get('msg')}")
+                
+            key_data = key_resp['data']
+            rand_str = key_data['rand_str']
+            enc_time = key_data['enc_time']
+            secret_key = key_data['key']
+            is_special = key_data['is_special']
+            enc_data = key_data.get('enc_data') # Should be top level in data for v3
+
+            # 2. Calculate Signature
+            ts = str(int(time.time()))
+            payload_str = ""
+            if is_special != 1:
+                payload_str = str(rid) + ts
+                
+            u = rand_str
+            for _ in range(enc_time):
+                u = hashlib.md5((u + secret_key).encode('utf-8')).hexdigest()
+                
+            auth = hashlib.md5((u + secret_key + payload_str).encode('utf-8')).hexdigest()
+            
+            # 3. Request Stream URL
+            api_url = f"https://www.douyu.com/lapi/live/getH5PlayV1/{rid}"
+            body = {
+                "enc_data": enc_data,
+                "tt": ts,
+                "did": did,
+                "auth": auth,
+                "cdn": "",
+                "ver": "Douyu_new",
+                "rate": "-1", # Default rate
+                "hevc": "0",
+                "fa": "0",
+                "ive": "0" 
+            }
+            
+            resp2 = await client.post(api_url, headers=headers, data=body)
+            resp2.raise_for_status()
+            return resp2.json()
 
     @trace_error_decorator
     async def get_stream_info(self, live_url: str) -> StreamData:
+        anchor_name = "Douyu Anchor"
+        title = "Douyu Live"
+        
         try:
              # 1. Quick check with betard API (no regex needed)
              room_id = live_url.split("/")[-1]
@@ -153,23 +216,60 @@ class DouyuHandler(PlatformHandler):
                      if 'room' in data:
                          room_info = data['room']
                          is_live = room_info.get('show_status') == 1
-                         anchor_name = room_info.get('nickname', 'Douyu Anchor')
-                         title = room_info.get('room_name', 'Douyu Live')
+                         anchor_name = room_info.get('nickname', anchor_name)
+                         title = room_info.get('room_name', title)
                          
                          if not is_live:
                              # Return offline immediately without running broken regex
                              return StreamData(
                                  platform=self.platform,
                                  anchor_name=anchor_name,
-                                 room_title=title,
+                                 title=title,
                                  is_live=False,
                                  record_url=live_url
                              )
         except Exception as e:
-             # Ignore betard errors and fall through to streamget
+             # Ignore betard errors and fall through to v3 check
              pass
 
-        # 2. Try streamget (broken regex might crash here)
+        # 2. Try V3 API (Custom implementation)
+        try:
+            # Extract basic room info from StreamData defaults if betard failed
+            if anchor_name == "Douyu Anchor" and title == "Douyu Live":
+                 pass # Could try to parse page title if absolutely needed, but V3 doesn't give metadata
+            
+            from ....utils.logger import logger
+            
+            v3_data = await self._fetch_stream_v3(room_id)
+            if v3_data.get('error') == 0:
+                data = v3_data['data']
+                rtmp_url = data.get('rtmp_url')
+                rtmp_live = data.get('rtmp_live')
+                
+                if rtmp_url and rtmp_live:
+                    flv_url = f"{rtmp_url}/{rtmp_live}"
+                    # Success!
+                    from ....utils.logger import logger
+                    logger.info(f"Douyu V3 Fetch Success: {flv_url}")
+                    return StreamData(
+                        platform=self.platform,
+                        anchor_name=anchor_name,
+                        title=title,
+                        is_live=True,
+                        record_url=flv_url
+                    )
+                else:
+                    from ....utils.logger import logger
+                    logger.warning(f"Douyu V3 Success but no URL: {v3_data}")
+            else:
+                from ....utils.logger import logger
+                logger.warning(f"Douyu V3 API Failed: {v3_data.get('msg')}")
+
+        except Exception as e:
+            from ....utils.logger import logger
+            logger.error(f"Douyu V3 Error: {e}")
+
+        # 3. Fallback to streamget (legacy) - Likely to fail but kept as last resort
         try:
             if not self.live_stream:
                 self.live_stream = streamget.DouyuLiveStream(proxy_addr=self.proxy, cookies=self.cookies)
@@ -180,7 +280,13 @@ class DouyuHandler(PlatformHandler):
                  # Suppress known regex failure
                  from ....utils.logger import logger
                  logger.warning(f"Douyu parser regex mismatch (likely offline or layout changed): {live_url}")
-                 return StreamData(platform=self.platform, is_live=False, record_url=live_url)
+                 return StreamData(
+                    platform=self.platform, 
+                    is_live=False, 
+                    record_url=live_url,
+                    anchor_name=anchor_name,
+                    title=title
+                 )
             raise e
         except Exception as e:
             # Let decorator handle other errors, or swallow?

@@ -407,10 +407,15 @@ class LiveStreamRecorder:
                         logger.debug(f"Failed to update UI: {e}")
 
             if return_code in safe_return_code:
-                self.recording.is_live = False
+                if not self.should_stop:
+                    self.recording.is_live = False
+
                 if not self.recording.is_recording:
                     if self.recording.monitor_status:
-                        self.recording.status_info = RecordingStatus.MONITORING
+                        if self.recording.is_live:
+                             self.recording.status_info = RecordingStatus.NOT_RECORDING
+                        else:
+                             self.recording.status_info = RecordingStatus.MONITORING
                         display_title = self.recording.title
                     else:
                         self.recording.status_info = RecordingStatus.STOPPED_MONITORING
@@ -910,9 +915,14 @@ class LiveStreamRecorder:
             self.recording.is_recording = False
 
             if not self.recording.is_recording:
-                self.recording.is_live = False
+                if not self.should_stop:
+                    self.recording.is_live = False
+                    
                 if self.recording.monitor_status:
-                    self.recording.status_info = RecordingStatus.MONITORING
+                    if self.recording.is_live:
+                         self.recording.status_info = RecordingStatus.NOT_RECORDING
+                    else:
+                         self.recording.status_info = RecordingStatus.MONITORING
                     display_title = self.recording.title
                 else:
                     self.recording.status_info = RecordingStatus.STOPPED_MONITORING
