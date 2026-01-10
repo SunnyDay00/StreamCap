@@ -65,7 +65,7 @@ class AITextOptimizer:
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": SYSTEM_PROMPT_OPTIMIZE},
+                {"role": "system", "content": self.config_manager.get_config_value("ai_system_prompt", SYSTEM_PROMPT_OPTIMIZE)},
                 {"role": "user", "content": f"原始文本：\n{text}"}
             ],
             "temperature": 0.3,

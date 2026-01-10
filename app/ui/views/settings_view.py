@@ -624,7 +624,7 @@ class SettingsPage(PageBase):
 
 
             # AI Configuration Logic
-            from ...core.ai.ai_optimizer import CONF_AI_API_KEY, CONF_AI_BASE_URL, CONF_AI_MODEL, CONF_AI_ENABLED, DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL
+            from ...core.ai.ai_optimizer import CONF_AI_API_KEY, CONF_AI_BASE_URL, CONF_AI_MODEL, CONF_AI_ENABLED, DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL, SYSTEM_PROMPT_OPTIMIZE
 
             def on_ai_test_click(e):
                 self.app.page.run_task(test_ai_connection)
@@ -648,6 +648,17 @@ class SettingsPage(PageBase):
                     await self.app.snack_bar.show_snack_bar(f"{self._['connection_success']}: {msg}", bgcolor=ft.Colors.GREEN)
                 else:
                     await self.app.snack_bar.show_snack_bar(f"{self._['connection_failed']}: {msg}", bgcolor=ft.Colors.RED)
+
+            prompt_field = ft.Ref[ft.TextField]()
+
+            def on_reset_ai_prompt(e):
+                self.user_config["ai_system_prompt"] = SYSTEM_PROMPT_OPTIMIZE
+                self.has_unsaved_changes['user_config'] = True
+                self.page.run_task(self.delay_handler.start_task_timer, self.save_user_config_after_delay, None)
+                if prompt_field.current:
+                     prompt_field.current.value = SYSTEM_PROMPT_OPTIMIZE
+                     prompt_field.current.update()
+                self.app.page.run_task(self.app.snack_bar.show_snack_bar, self._.get("reset_default") + " " + self._.get("success", "Success"))
 
             ai_config_controls = [
                 self.create_setting_row(
@@ -692,6 +703,28 @@ class SettingsPage(PageBase):
                          ft.Text(self._["ai_model_tip"], size=12, color=ft.Colors.GREY)
                     ])
                 ),
+                self.create_setting_row(
+                    self._.get("ai_system_prompt", "AI System Prompt"),
+                    ft.Column([
+                         ft.TextField(
+                            ref=prompt_field,
+                            value=self.get_config_value("ai_system_prompt", SYSTEM_PROMPT_OPTIMIZE),
+                            data="ai_system_prompt",
+                            width=400,
+                            multiline=True,
+                            min_lines=5,
+                            max_lines=15,
+                            on_change=self.on_change,
+                            text_size=12,
+                        ),
+                        ft.TextButton(
+                            text=self._.get("reset_default", "Reset Default"),
+                            icon=ft.icons.RESTORE,
+                            on_click=lambda e: on_reset_ai_prompt(e)
+                        ),
+                         ft.Text(self._.get("ai_system_prompt_tip", ""), size=12, color=ft.Colors.GREY)
+                    ])
+                ),
                 ft.ElevatedButton(
                     self._["test_configuration"],
                     icon=ft.icons.SCIENCE,
@@ -722,8 +755,80 @@ class SettingsPage(PageBase):
             ai_config_controls = []
             auto_identify_controls = []
 
+        # Cloud STT Logic (Independent of Local STT)
+        try:
+            from ...core.stt.cloud_stt import CloudSTTService
+            
+            def on_cloud_stt_test_click(e):
+                self.app.page.run_task(test_cloud_stt_connection)
+
+            async def test_cloud_stt_connection():
+                cloud_service = CloudSTTService(self.config_manager)
+                await self.app.snack_bar.show_snack_bar(self._["cloud_stt_testing"], bgcolor=ft.Colors.BLUE)
+                success, msg = await cloud_service.test_connection()
+                if success:
+                    await self.app.snack_bar.show_snack_bar(self._["cloud_stt_test_success"], bgcolor=ft.Colors.GREEN)
+                else:
+                    await self.app.snack_bar.show_snack_bar(self._["cloud_stt_test_failed"].format(msg=msg), bgcolor=ft.Colors.RED)
+
+            cloud_stt_controls = [
+                self.create_setting_row(
+                    self._["enable_cloud_stt"],
+                    ft.Switch(
+                        value=self.get_config_value("enable_cloud_stt", False),
+                        data="enable_cloud_stt",
+                        on_change=self.on_change
+                    )
+                ),
+                self.create_setting_row(
+                    f"{self._['cloud_stt_api_key']} *",
+                    ft.TextField(
+                        value=self.get_config_value("cloud_stt_api_key"),
+                        data="cloud_stt_api_key",
+                        password=True, can_reveal_password=True, width=400,
+                        on_change=self.on_change,
+                        hint_text="sk-..."
+                    )
+                ),
+                self.create_setting_row(
+                    self._["cloud_stt_base_url"],
+                    ft.TextField(
+                        value=self.get_config_value("cloud_stt_base_url", CloudSTTService.DEFAULT_BASE_URL),
+                        data="cloud_stt_base_url", width=400,
+                        on_change=self.on_change
+                    )
+                ),
+                self.create_setting_row(
+                    self._["cloud_stt_model"],
+                    ft.Dropdown(
+                        options=[
+                            ft.dropdown.Option("qwen3-asr-flash-filetrans", text=self._.get("model_qwen_filetrans", "Qwen3-Filetrans")),
+                            ft.dropdown.Option("qwen3-asr-flash", text=self._.get("model_qwen_flash", "Qwen3-Flash")),
+                        ],
+                        value=self.get_config_value("cloud_stt_model", "qwen3-asr-flash-filetrans"),
+                        data="cloud_stt_model", width=400,
+                        on_change=self.on_change
+                    )
+                ),
+                 ft.ElevatedButton(
+                    self._["cloud_stt_test"],
+                    icon=ft.icons.CLOUD_SYNC,
+                    on_click=on_cloud_stt_test_click,
+                    style=ft.ButtonStyle(bgcolor=ft.Colors.BLUE, color=ft.Colors.WHITE)
+                )
+            ]
+        except Exception as e:
+             logger.error(f"Failed to initialize Cloud STT UI: {e}")
+             cloud_stt_controls = [ft.Text(f"Error loading Cloud STT: {e}", color=ft.Colors.RED)]
+
         return ft.Column(
             [
+                self.create_setting_group(
+                    self._["cloud_stt_settings"],
+                    self._["cloud_stt_tip"],
+                    cloud_stt_controls,
+                    is_mobile,
+                ),
                 self.create_setting_group(
                     self._["local_stt_settings"],
                     self._["local_stt_tip"],

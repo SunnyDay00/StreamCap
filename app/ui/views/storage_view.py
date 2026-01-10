@@ -242,7 +242,7 @@ class StoragePage(BasePage):
                         logger.error(f"AI Optimization failed for {file_path}: {ai_e}")
                         # Fallback to original text, no critical failure
                             
-                    self.transcription_manager.set_text(file_path, text_result, metadata={"ai_optimized": is_optimized} if is_optimized else None)
+                    self.transcription_manager.set_text(file_path, text_result, metadata={"ai_optimized": is_optimized, "source": "local"} if is_optimized else {"source": "local"})
                 except Exception as e:
                     logger.error(f"Failed to transcribe {file_path}: {e}")
                 finally:
@@ -403,6 +403,19 @@ class StoragePage(BasePage):
                     border_radius=5
                 )
             )
+
+        source = metadata.get("source")
+        if source:
+             source_label = self._.get(f"source_{source}", source.capitalize())
+             source_color = ft.Colors.PURPLE if source == "cloud" else ft.Colors.TEAL
+             title_content.controls.append(
+                ft.Container(
+                    content=ft.Text(source_label, size=10, color=ft.Colors.WHITE),
+                    bgcolor=source_color,
+                    padding=5,
+                    border_radius=5
+                )
+             )
 
         result_dialog = ft.AlertDialog(
             title=title_content,
