@@ -526,7 +526,7 @@ class RecordingsPage(PageBase):
                     record_format=user_config.get("video_format", "TS"),
                     segment_record=user_config.get("segmented_recording_enabled", False),
                     segment_time=user_config.get("video_segment_time", "1800"),
-                    monitor_status=True,
+                    monitor_status=False,
                     scheduled_recording=user_config.get("scheduled_recording", False),
                     scheduled_start_time=user_config.get("scheduled_start_time"),
                     monitor_hours=user_config.get("monitor_hours"),

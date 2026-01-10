@@ -386,7 +386,7 @@ class RecordingDialog:
                         "speed": "X KB/s",
                         "segment_record": segment_input.visible,
                         "segment_time": segment_input.value,
-                        "monitor_status": initial_values.get("monitor_status", True),
+                        "monitor_status": initial_values.get("monitor_status", False),
                         "display_title": display_title,
                         "scheduled_recording": scheduled_setting_dropdown.value == 'true',
                         "scheduled_start_time": ','.join([str(i.value) for i in time_inputs]),
