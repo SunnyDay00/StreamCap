@@ -11,6 +11,7 @@ class MP3CommandBuilder(FFmpegCommandBuilder):
                 "-b:a", "320k",
                 "-map", "0:a",
                 "-f", "segment",
+                "-segment_format", "mp3",
                 "-segment_time", str(self.segment_time),
                 "-reset_timestamps", "1",
                 self.full_path,

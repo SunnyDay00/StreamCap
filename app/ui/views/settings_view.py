@@ -802,10 +802,10 @@ class SettingsPage(PageBase):
                     self._["cloud_stt_model"],
                     ft.Dropdown(
                         options=[
-                            ft.dropdown.Option("qwen3-asr-flash-filetrans", text=self._.get("model_qwen_filetrans", "Qwen3-Filetrans")),
-                            ft.dropdown.Option("qwen3-asr-flash", text=self._.get("model_qwen_flash", "Qwen3-Flash")),
+                            ft.dropdown.Option("paraformer-v2", text=self._.get("model_paraformer_v2", "Paraformer-v2")),
+                            ft.dropdown.Option("paraformer-8k-v2", text=self._.get("model_paraformer_8k_v2", "Paraformer-8k-v2")),
                         ],
-                        value=self.get_config_value("cloud_stt_model", "qwen3-asr-flash-filetrans"),
+                        value=self.get_config_value("cloud_stt_model", "paraformer-v2"),
                         data="cloud_stt_model", width=400,
                         on_change=self.on_change
                     )

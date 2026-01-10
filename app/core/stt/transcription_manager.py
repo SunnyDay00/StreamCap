@@ -13,6 +13,10 @@ class TranscriptionManager:
     def is_processing(self, file_path):
         return self._normalize_path(file_path) in self.processing_files
 
+    def mark_processing(self, file_path):
+        """Manually mark a file as processing (useful for immediate UI updates)"""
+        self.processing_files.add(self._normalize_path(file_path))
+
     AI_SUFFIX = "_ai"
     CLOUD_SUFFIX = "_cloud"
     LOCAL_SUFFIX = "_local"
@@ -160,6 +164,31 @@ class TranscriptionManager:
 
             if is_optimized:
                  self.set_text(file_path, text_result, metadata={"ai_optimized": True, "source": source})
+                 # Cleanup raw version to avoid clutter (User request)
+                 raw_path = self._get_txt_path(file_path, source=source, ai_optimized=False)
+                 if os.path.exists(raw_path):
+                     try:
+                         os.remove(raw_path)
+                         logger.info(f"Cleaned up raw transcription: {raw_path}")
+                     except Exception:
+                         pass
+
+            # Cleanup Other Sources to prevent duplicate/conflicting files
+            # If we just saved 'cloud', delete 'local'. If 'local', delete 'cloud'.
+            other_sources = ['local', 'cloud', None] # None is legacy
+            current_source = source
+            
+            for s in other_sources:
+                 if s != current_source:
+                     # Remove both AI and Raw for other sources
+                     for ai in [True, False]:
+                         p = self._get_txt_path(file_path, source=s, ai_optimized=ai)
+                         if os.path.exists(p):
+                             try:
+                                 os.remove(p)
+                                 logger.info(f"Cleaned up stale source file: {p}")
+                             except Exception:
+                                 pass
                  
             return text_result
         finally:

@@ -208,57 +208,59 @@ class StoragePage(BasePage):
         
         # Start background processing task
         async def process_batch():
-            from ...core.stt.local_stt import LocalSTTService
-            stt_service = LocalSTTService(self.app.config_manager)
-            
-            # Check models first (quick check)
-            is_ready, _ = stt_service.check_models_status()
-            if not is_ready:
-                 # self.processing_files.clear()
-                 await self.update_file_list()
-                 await self.app.snack_bar.show_snack_bar(self._["go_to_configure_models"], bgcolor=ft.Colors.RED)
-                 return
+            try:
+                # 1. Determine Concurrency Mode
+                use_cloud = self.app.config_manager.get_config_value("enable_cloud_stt", False)
+                
+                # Cloud: Supports parallel processing (Limit to 5 to be safe with bandwidth/connections)
+                # Local: Strictly sequential to avoid CPU/GPU contention
+                concurrency = 5 if use_cloud else 1
+                semaphore = asyncio.Semaphore(concurrency)
+                
+                if use_cloud:
+                     await self.app.snack_bar.show_snack_bar(f"Starting Cloud Batch (Concurrency: {concurrency})")
+                else:
+                     # Check local models readiness before starting loop if using local
+                     from ...core.stt.local_stt import LocalSTTService
+                     stt_service = LocalSTTService(self.app.config_manager)
+                     is_ready, _ = stt_service.check_models_status()
+                     if not is_ready:
+                          await self.update_file_list()
+                          await self.app.snack_bar.show_snack_bar(self._["go_to_configure_models"], bgcolor=ft.Colors.RED)
+                          return
 
-            # Process sequentially
-            loop = asyncio.get_running_loop()
-            
-            # Initialize AI Optimizer
-            from ...core.ai.ai_optimizer import AITextOptimizer
-            ai_optimizer = AITextOptimizer(self.app.config_manager)
-            
-            for file_path in files_to_process:
-                try:
-                    # 1. Local STT
-                    text_result = await loop.run_in_executor(self.executor, lambda: stt_service.transcribe(file_path))
-                    
-                    is_optimized = False
-                    # 2. AI Optimization (Optional)
-                    try:
-                        optimized_text = await ai_optimizer.optimize_text(text_result)
-                        if optimized_text != text_result:
-                            text_result = optimized_text
-                            is_optimized = True
-                    except Exception as ai_e:
-                        logger.error(f"AI Optimization failed for {file_path}: {ai_e}")
-                        # Fallback to original text, no critical failure
-                            
-                    self.transcription_manager.set_text(file_path, text_result, metadata={"ai_optimized": is_optimized, "source": "local"} if is_optimized else {"source": "local"})
-                except Exception as e:
-                    logger.error(f"Failed to transcribe {file_path}: {e}")
-                finally:
-                    # if file_path in self.processing_files:
-                    #     self.processing_files.remove(file_path)
-                    pass
-                    
-                    # Only update UI if the page is still active/mounted
-                    if self.app.current_page == self:
+                # 2. Worker Function
+                async def worker(file_path):
+                    async with semaphore:
                         try:
-                            await self.update_file_list()
-                        except Exception as ex:
-                            logger.warning(f"UI update failed (ignored): {ex}")
+                            # Use Manager to handle Cloud/Local switch + AI Optimization + Saving
+                            await self.transcription_manager.transcribe_file(file_path, self.executor)
+                        except Exception as e:
+                            logger.error(f"Failed to transcribe {file_path}: {e}")
+                        finally:
+                            # Update UI incrementally to show completion status
+                            if self.app.current_page == self:
+                                try:
+                                    await self.update_file_list()
+                                except Exception:
+                                    pass
 
-            if self.app.current_page == self:
-                await self.app.snack_bar.show_snack_bar(self._["identification_complete"])
+                # 3. Launch Tasks
+                tasks = [asyncio.create_task(worker(fp)) for fp in files_to_process]
+                
+                # Monitor progress (Optional enhancement: Progress Bar)
+                # For now, wait for all
+                await asyncio.gather(*tasks)
+
+            except Exception as e:
+                 logger.error(f"Batch processing error: {e}")
+            finally:
+                if self.app.current_page == self:
+                    try:
+                        await self.update_file_list()
+                        await self.app.snack_bar.show_snack_bar(self._["identification_complete"])
+                    except Exception:
+                        pass
 
         # Fire and forget
         self.app.page.run_task(process_batch)
@@ -357,11 +359,10 @@ class StoragePage(BasePage):
         await self._start_identification_task(file_path)
     
     async def _start_identification_task(self, file_path):
-        # Add to processing and update UI to show progress row
-        # self.processing_files.add(file_path)
+        # Add to processing MANUALLY to ensure UI shows spinner immediately
+        self.transcription_manager.mark_processing(file_path)
         await self.update_file_list()
         
-        # Run actual logic
         # Run actual logic
         self.app.page.run_task(self._do_identify_bg, file_path)
 
@@ -375,7 +376,7 @@ class StoragePage(BasePage):
             else:
                  await self.app.snack_bar.show_snack_bar(f"{self._['identification_failed']}: {e}", bgcolor=ft.Colors.RED)
         finally:
-            # self.processing_files.discard(file_path)
+            # Manually trigger update to remove spinner and show result
             await self.update_file_list()
 
     def show_transcription_result(self, file_path):
@@ -394,10 +395,13 @@ class StoragePage(BasePage):
             ft.Text(self._["identification_result"], size=20, weight=ft.FontWeight.BOLD),
         ], alignment=ft.MainAxisAlignment.SPACE_BETWEEN)
 
+        # Badge Container (Right side of title)
+        badge_row = ft.Row(spacing=5, alignment=ft.MainAxisAlignment.END)
+
         if is_ai_optimized:
-            title_content.controls.append(
+            badge_row.controls.append(
                 ft.Container(
-                    content=ft.Text(self._.get("ai_optimized_label", "AI Optimized"), size=10, color=ft.Colors.WHITE),
+                    content=ft.Text(self._.get("ai_optimized_label", "AI 优化"), size=10, color=ft.Colors.WHITE),
                     bgcolor=ft.Colors.BLUE,
                     padding=5,
                     border_radius=5
@@ -406,9 +410,15 @@ class StoragePage(BasePage):
 
         source = metadata.get("source")
         if source:
-             source_label = self._.get(f"source_{source}", source.capitalize())
+             # Localize source
+             source_key = f"source_{source}"
+             source_label = self._.get(source_key, source.capitalize()) 
+             # Manual fallback if key missing for common ones
+             if source == "cloud" and source_key not in self._:
+                 source_label = "云端"
+                 
              source_color = ft.Colors.PURPLE if source == "cloud" else ft.Colors.TEAL
-             title_content.controls.append(
+             badge_row.controls.append(
                 ft.Container(
                     content=ft.Text(source_label, size=10, color=ft.Colors.WHITE),
                     bgcolor=source_color,
@@ -416,6 +426,9 @@ class StoragePage(BasePage):
                     border_radius=5
                 )
              )
+        
+        # Add badge row to title content
+        title_content.controls.append(badge_row)
 
         result_dialog = ft.AlertDialog(
             title=title_content,
