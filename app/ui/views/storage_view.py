@@ -213,8 +213,16 @@ class StoragePage(BasePage):
                 use_cloud = self.app.config_manager.get_config_value("enable_cloud_stt", False)
                 
                 # Cloud: Supports parallel processing (Limit to 5 to be safe with bandwidth/connections)
-                # Local: Strictly sequential to avoid CPU/GPU contention
-                concurrency = 5 if use_cloud else 1
+                if use_cloud:
+                     # Cloud: Supports parallel processing (Limit to 5 to be safe with bandwidth/connections)
+                     concurrency = 5
+                else:
+                     # Local: Read config
+                     val = self.app.config_manager.get_config_value("local_max_concurrent_tasks", 1)
+                     concurrency = int(val) if val is not None else 1
+                     # Cap at 4 for sanity
+                     concurrency = max(1, min(4, concurrency))
+
                 semaphore = asyncio.Semaphore(concurrency)
                 
                 if use_cloud:
@@ -418,6 +426,23 @@ class StoragePage(BasePage):
                  source_label = "云端"
                  
              source_color = ft.Colors.PURPLE if source == "cloud" else ft.Colors.TEAL
+             
+             # Append Model Name if available
+             model_name = metadata.get("model")
+             if model_name:
+                 # Clean up model name for display if it's a long path or ID
+                 # e.g. "iic/speech_paraformer..." -> "Paraformer"
+                 if "paraformer" in model_name.lower():
+                      display_model = "Paraformer"
+                 elif "fun-asr-nano" in model_name.lower():
+                      display_model = "Fun-ASR-Nano"
+                 elif "qwen" in model_name.lower():
+                      display_model = "Qwen"
+                 else:
+                      display_model = model_name
+                      
+                 source_label = f"{source_label} ({display_model})"
+
              badge_row.controls.append(
                 ft.Container(
                     content=ft.Text(source_label, size=10, color=ft.Colors.WHITE),

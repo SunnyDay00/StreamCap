@@ -50,7 +50,7 @@ class CloudSTTService:
     def _get_model(self):
         return self.config_manager.get_config_value("cloud_stt_model", "paraformer-v2")
 
-    async def transcribe(self, file_path: str) -> str:
+    async def transcribe(self, file_path: str) -> tuple[str, str]:
         """
         Main entry point for transcription. 
         Handles splitting if necessary, upload, and transcription logic.
@@ -88,7 +88,7 @@ class CloudSTTService:
                      except:
                          pass
 
-        return final_text.strip()
+        return final_text.strip(), model
         
     async def _process_single_file_direct(self, file_path: str, api_key: str, model: str) -> str:
         """

@@ -511,7 +511,7 @@ class SettingsPage(PageBase):
         is_mobile = self.app.is_mobile
         
         try:
-            from ...core.stt.local_stt import LocalSTTService, MODELS
+            from ...core.stt.local_stt import LocalSTTService, MODELS, ASR_MODELS
             stt_service = LocalSTTService(self.config_manager)
             
             self.download_progress_bar = ft.ProgressBar(width=400, visible=False)
@@ -523,14 +523,26 @@ class SettingsPage(PageBase):
                 try:
                     is_ready, status = stt_service.check_models_status()
                     rows = []
-                    for key, model_id in MODELS.items():
+                    
+                    # Merge all models ensuring ASR models are included
+                    all_models_check = MODELS.copy()
+                    all_models_check.update(ASR_MODELS)
+                    
+                    for key, model_id in all_models_check.items():
                         ready = status.get(key, False)
+                        # Nicer display name
+                        display_name_key = f"model_name_{key}"
+                        display_name = self._.get(display_name_key, key.replace("_", " ").title())
+                        
+                        if key in ASR_MODELS:
+                            display_name = f"[ASR] {display_name}"
+                        
                         rows.append(
                             ft.Row([
                                 ft.Icon(ft.icons.CHECK_CIRCLE if ready else ft.icons.CANCEL, 
                                         color=ft.Colors.GREEN if ready else ft.Colors.RED),
                                 ft.Column([
-                                     ft.Text(f"{key.upper()} Model: {model_id.split('/')[-1]}", weight=ft.FontWeight.BOLD),
+                                     ft.Text(f"{display_name}: {model_id.split('/')[-1]}", weight=ft.FontWeight.BOLD),
                                      ft.Text(self._.get(f"model_desc_{key}", ""), size=12, color=ft.Colors.GREY)
                                 ], spacing=2, expand=True),
                                 ft.Text(self._["model_status_ready"] if ready else self._["model_status_missing"], 
@@ -585,6 +597,56 @@ class SettingsPage(PageBase):
                         ft.Container(
                             content=ft.Column(controls=initial_rows, ref=self.model_list_ref), 
                             padding=10
+                        ),
+                        
+                        # ASR Model Selection
+                        self.create_setting_row(
+                            self._.get("select_asr_model", "Local ASR Model"),
+                            ft.Dropdown(
+                                options=[
+                                    ft.dropdown.Option(
+                                        k, 
+                                        text=self._.get(f"model_name_{k}", k.replace("_", " ").title())
+                                    ) 
+                                    for k in ASR_MODELS.keys()
+                                ],
+                                value=self.get_config_value("local_asr_model", "paraformer"),
+                                data="local_asr_model",
+                                on_change=self.on_change,
+                                width=300
+                            )
+                        ),
+                        # Max Concurrent Tasks
+                        self.create_setting_row(
+                            self._.get("local_max_concurrent_tasks", "Max Concurrent Tasks"),
+                            ft.Column([
+                                ft.Slider(
+                                    min=1,
+                                    max=4,
+                                    divisions=3,
+                                    label="{value}",
+                                    value=int(self.get_config_value("local_max_concurrent_tasks", 1) or 1),
+                                    data="local_max_concurrent_tasks",
+                                    on_change=self.on_change,
+                                    width=300
+                                ),
+                                ft.Text(self._.get("local_max_concurrent_tasks_tip", "Warning: High concurrency uses significantly more RAM/CPU."), size=12, color=ft.Colors.GREY)
+                            ])
+                        ),
+                        # Device Selection
+                        self.create_setting_row(
+                            self._.get("local_device", "Inference Device"),
+                            ft.Dropdown(
+                                options=[
+                                    ft.dropdown.Option("auto", "Auto (Default)"),
+                                    ft.dropdown.Option("cuda", "CUDA (GPU)"),
+                                    ft.dropdown.Option("cpu", "CPU Only"),
+                                ],
+                                value=self.get_config_value("local_device", "auto"),
+                                data="local_device",
+                                on_change=self.on_change,
+                                width=300
+                            )
                         ),
                         ft.Container(
                              content=ft.Text(self._.get("download_warning_tip", "* Large download warning"), size=12, color=ft.Colors.GREY),
