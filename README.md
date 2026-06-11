@@ -1,321 +1,98 @@
 <div align="center">
   <img src="./assets/images/logo.svg" alt="StreamCap" />
 </div>
-<p align="center">
-  <img alt="Python version" src="https://img.shields.io/badge/python-3.10%2B-blue.svg">
-  <a href="https://github.com/ihmily/StreamCap">
-      <img alt="Supported Platforms" src="https://img.shields.io/badge/Platforms-Win%20%7C%20Mac%20%7C%20Linux-6B5BFF.svg"></a>
-    <a href="https://hub.docker.com/r/ihmily/streamcap/tags">
-      <img alt="Docker Pulls" src="https://img.shields.io/docker/pulls/ihmily/streamcap?label=Docker%20Pulls&color=2496ED&logo=docker"></a>
-  <a href="https://github.com/ihmily/StreamCap/releases/latest">
-      <img alt="Latest Release" src="https://img.shields.io/github/v/release/ihmily/StreamCap"></a>
-  <a href="https://github.com/ihmily/StreamCap/releases/latest">
-      <img alt="Downloads" src="https://img.shields.io/github/downloads/ihmily/StreamCap/total"></a>
-</p>
+
 <div align="center">
   简体中文 / <a href="./README_EN.md">English</a>
-</div><br>
+</div>
 
+# StreamCap Fork 增强说明
 
+本仓库 Fork 自 [ihmily/StreamCap](https://github.com/ihmily/StreamCap)。
 
+本文档只说明本仓库在原项目基础上新增和修改的功能。项目基础能力、安装部署、运行方式、平台支持、配置项和完整使用说明，请查看原项目文档：
 
-StreamCap 是一个基于FFmpeg和StreamGet的多平台直播流录制客户端，覆盖 40+ 国内外主流直播平台，支持批量录制、循环监控、定时监控和自动转码等功能。
+- [原项目 README](https://github.com/ihmily/StreamCap)
+- [原项目 Wiki](https://github.com/ihmily/StreamCap/wiki/%E4%B8%BB%E9%A1%B5)
 
-## ✨功能特性
+## 新增与修改功能
 
-- **多端支持**：支持Windows/MacOS/Web运行
-- **循环监控**：实时监控直播间状态，开播即录。
-- **定时任务**：根据设定时间范围检查直播间状态。
-- **多种输出格式**：支持 ts、flv、mkv、mov、mp4、mp3、m4a 等格式。
-- **自动转码**：录制完成后自动转码为 mp4 格式。
-- **消息推送**：支持直播状态推送，及时获取开播通知。
+### 1. 录制文件转文字
 
-## 📸录制界面
+- 在 **存储** 页面新增录制文件文本识别能力。
+- 支持对单个文件执行 `识别文本`、`重新识别`、`查看文本`、`导出文本`。
+- 支持 `识别全部文本`、`识别剩余文本`、`批量导出文本`。
+- 支持常见音视频文件识别，包括 `mp3`、`wav`、`m4a`、`mp4`、`mov`、`mkv`、`flv`、`wma`、`aac`、`flac`、`avi`、`ts`、`webm`。
+- 支持录制完成后自动识别；分段录制会逐段处理，并在文件完整性检查通过后再开始转写。
+- 识别结果保存为同名 `.txt` 文件，并按本地/云端来源、模型、AI 优化状态区分文件名。
+- 重新识别时会清理旧的同类识别结果，减少重复文本文件和结果混乱。
 
-![StreamCap Interface](./assets/images/example01.png)
+### 2. 本地语音识别
 
-## 🛠️快速开始
+- 新增 **设置 -> 识别文本 -> 本地语音识别模型**配置区域。
+- 支持检查、一键下载和更新本地识别模型。
+- 本地 ASR 支持 `Paraformer` 和 `Fun-ASR-Nano-2512`。
+- 集成 VAD、标点恢复等辅助模型，提升转写可读性。
+- 新增 `MossFormer2` 人声增强，可在背景音乐或噪声较重时先突出人声再识别。
+- 支持推理设备选择：自动、CUDA、CPU。
+- 支持本地批量识别并发数设置，范围为 1-4。
+- 增加 CPU 保护策略，会根据核心数和并发任务数保留系统/UI 资源，降低识别时界面卡顿风险。
 
-### 1.**运行预构建的程序**：
+### 3. 云端语音识别
 
-访问 [StreamCap Releases](https://github.com/ihmily/StreamCap/releases/latest) 页面，根据自身系统下载对应的最新版本压缩包。
+- 新增阿里云 DashScope 云端识别配置。
+- 支持 `Paraformer-v2` 和 `Paraformer-8k-v2`。
+- 云端识别使用异步任务流程，适合处理较大的录制文件。
+- 长音频会按模型限制自动切分，识别完成后再合并文本。
+- 批量识别时支持多个文件异步处理，提高处理效率。
 
-- **Windows 用户**：下载 `StreamCap.zip` 文件，解压后运行 `StreamCap.exe`。
-- **macOS 用户**：下载 `StreamCap.dmg` 文件，按照提示完成安装，即可在启动台找到应用并运行。
+### 4. AI 文本优化
 
-### 2.从源代码运行
+- 新增 OpenAI 兼容接口的 AI 文本优化功能。
+- 默认兼容阿里云百炼接口，可自定义 `API Base URL`、模型名和系统提示词。
+- 可对 ASR 初稿进行轻量清理，包括明显错字、重复、填充词和基础标点问题。
+- 默认提示词强调保留原始口语风格，避免把口语内容改写成书面稿。
+- 识别结果界面会标记文本来源和是否经过 AI 优化。
 
-确保已安装 **Python 3.10** 或更高版本。💥
+### 5. 依赖管理与内置运行环境
 
-1.**克隆项目代码**：
+- 新增 **设置 -> 程序依赖** 页面。
+- 可检查 FFmpeg、Node.js、Python 运行库的安装状态、路径和版本。
+- 支持在界面中一键安装或重装 FFmpeg、Node.js、Python 运行库。
+- 启动时优先加载项目内置的 `libs`、`ffmpeg`、`node` 等资源，减少对系统环境的依赖。
+- 新增 Python 运行库自动检测和修复能力。
 
-```bash
-git clone https://github.com/ihmily/StreamCap.git
-cd StreamCap
-```
+### 6. 录制行为调整
 
-2.**安装依赖**：
+- 启动软件后，已有直播间默认不再自动开始监控，避免打开程序就开始录制。
+- 每个录制卡片新增手动检测直播状态按钮。
+- 增强关闭保护逻辑：退出时会等待正在录制、转码或识别的任务完成。
+- 桌面端支持最小化到托盘，并保留强制关闭入口。
+- 优化分段录制后的自动识别流程。
+- 修复并增强斗鱼直播录制兼容性。
 
-```bash
-# 安装核心依赖
-pip install -i https://pypi.org/simple streamget 
+### 7. 存储页面增强
 
-# 桌面端
-pip install -r requirements.txt
+- 存储页面新增手动刷新。
+- 新增文件时长识别和批量识别全部时长。
+- 支持在文件列表中显示时长徽标。
+- 支持将识别出的时长写入文件名，方便整理录制文件。
+- 优化批量操作和文件时长统计逻辑。
 
-# Web端
-pip install -r requirements-web.txt
-```
+## 功能入口
 
-3.**配置运行环境**：
+- **设置 -> 识别文本**：配置本地识别、云端识别、录制后自动识别和 AI 文本优化。
+- **设置 -> 程序依赖**：检查、安装或重装 FFmpeg、Node.js、Python 运行库。
+- **存储**：识别文本、查看文本、导出文本、批量识别、批量导出、识别文件时长。
+- **录制卡片**：手动检测直播状态、启动/停止监控、查看录制状态。
 
-将.env.example示例配置文件复制一份并将文件重命名为.env
+## 上游文档
 
-```bash
-cp .env.example .env
-```
+本仓库不重复维护原项目的安装、实现、部署和基础使用说明。相关内容请查看：
 
-4.**运行程序**：
+- [原项目 README](https://github.com/ihmily/StreamCap)
+- [原项目 Wiki](https://github.com/ihmily/StreamCap/wiki/%E4%B8%BB%E9%A1%B5)
 
-在Windows和macOS上默认以桌面程序的方式运行，使用以下命令启动程序：
+## 许可证
 
-```bash
-python main.py
-```
-
-Linux请使用web方式运行，修改 `.env` 文件，将 `PLATFORM` 的值改为 `web`，即可以Web方式运行。
-
-或者无需修改配置文件，直接使用以下命令启动
-
-```bash
-python main.py --web
-```
-
-启动成功后，通过 `http://127.0.0.1:6006` 访问。更多配置请参考 [Web运行指南](https://github.com/ihmily/StreamCap/wiki/安装指南#web-端运行)
-
-如果程序提示缺少 FFmpeg，请访问 FFmpeg 官方下载页面[Download FFmpeg](https://ffmpeg.org/download.html)，下载预编译的 FFmpeg 可执行文件，并配置环境变量。
-
-## 🐋容器运行
-
-本机无需Python环境运行，在运行命令之前，请确保您的机器上安装了 [Docker](https://docs.docker.com/get-docker/) 和 [Docker Compose](https://docs.docker.com/compose/install/) 
-
-1.**快速启动**
-
-最简单方法是使用`docker compose`运行，进入项目根目录后，只需简单执行以下命令(确保已经存在`.env`文件)：
-
-```bash
-docker compose up
-```
-
-可选 `-d` 在后台运行。注意容器内时区问题，默认使用的是 `Asia/Shanghai` ，如需修改可以在.env文件配置。
-
-2.**停止容器实例**
-
-```bash
-docker compose stop
-```
-
-3.**构建镜像(可选)**
-
-Docker仓库中的镜像的代码版本不一定是最新的，如有需要运行本仓库主分支最新代码，可以本地自定义构建
-
-```bash
-docker build -t streamcap .
-```
-
-## 😺已支持平台
-
-**国内平台（30+）**：
-
-抖音、快手、虎牙、斗鱼、B站、小红书、YY、映客、Acfun、Blued、京东、淘宝...
-
-**海外平台（10+）**：
-
-TikTok、Twitch、PandTV、Soop、Twitcasting、CHZZK、Shopee、Youtube、LiveMe、Flextv(TTingLive)、Popkontv、Bigo...
-
-**示例地址：**
-
-如未特殊备注，默认使用直播间地址录制
-
-```
-抖音:
-https://live.douyin.com/745964462470
-https://v.douyin.com/iQFeBnt/  (需Node.js)
-https://live.douyin.com/yall1102  （链接+抖音号）
-https://v.douyin.com/CeiU5cbX  （主播主页地址）
-
-TikTok:
-https://www.tiktok.com/@pearlgaga88/live
-
-快手:
-https://live.kuaishou.com/u/yall1102
-
-虎牙:
-https://www.huya.com/52333
-
-斗鱼:
-https://www.douyu.com/3637778?dyshid=
-https://www.douyu.com/topic/wzDBLS6?rid=4921614&dyshid=
-
-YY:
-https://www.yy.com/22490906/22490906
-
-B站:
-https://live.bilibili.com/320
-
-小红书:
-http://xhslink.com/xpJpfM  (一次性地址，暂不支持循环监控)
-
-bigo直播:
-https://www.bigo.tv/cn/716418802
-
-buled直播:
-https://app.blued.cn/live?id=Mp6G2R
-
-SOOP:
-https://play.sooplive.co.kr/sw7love
-
-网易cc:
-https://cc.163.com/583946984
-
-千度热播:
-https://qiandurebo.com/web/video.php?roomnumber=33333
-
-PandaTV:
-https://www.pandalive.co.kr/live/play/bara0109
-
-猫耳FM:
-https://fm.missevan.com/live/868895007
-
-Look直播:
-https://look.163.com/live?id=65108820&position=3
-
-WinkTV:
-https://www.winktv.co.kr/live/play/anjer1004
-
-FlexTV/TTinglive:
-https://www.flextv.co.kr/channels/593127/live
-https://www.ttinglive.com/channels/593127/live
-
-PopkonTV:
-https://www.popkontv.com/live/view?castId=wjfal007&partnerCode=P-00117
-https://www.popkontv.com/channel/notices?mcid=wjfal007&mcPartnerCode=P-00117
-
-TwitCasting:
-https://twitcasting.tv/c:uonq
-
-百度直播:
-https://live.baidu.com/m/media/pclive/pchome/live.html?room_id=9175031377&tab_category
-
-微博直播:
-https://weibo.com/l/wblive/p/show/1022:2321325026370190442592
-
-酷狗直播:
-https://fanxing2.kugou.com/50428671?refer=2177&sourceFrom=
-
-TwitchTV:
-https://www.twitch.tv/gamerbee
-
-LiveMe:
-https://www.liveme.com/zh/v/17141543493018047815/index.html
-
-花椒直播:
-https://www.huajiao.com/l/345096174  (一次性地址，暂不支持循环监控)
-
-ShowRoom:
-https://www.showroom-live.com/room/profile?room_id=480206  (主播主页地址)
-
-Acfun:
-https://live.acfun.cn/live/179922
-
-映客直播:
-https://www.inke.cn/liveroom/index.html?uid=22954469&id=1720860391070904
-
-音播直播:
-https://live.ybw1666.com/800002949
-
-知乎直播:
-https://www.zhihu.com/people/ac3a467005c5d20381a82230101308e9  (主播主页地址)
-
-CHZZK:
-https://chzzk.naver.com/live/458f6ec20b034f49e0fc6d03921646d2
-
-嗨秀直播:
-https://www.haixiutv.com/6095106
-
-VV星球直播:
-https://h5webcdn-pro.vvxqiu.com//activity/videoShare/videoShare.html?h5Server=https://h5p.vvxqiu.com&roomId=LP115924473&platformId=vvstar
-
-17Live:
-https://17.live/en/live/6302408
-
-浪Live:
-https://www.lang.live/en-US/room/3349463
-
-畅聊直播:
-https://live.tlclw.com/106188
-
-飘飘直播:
-https://m.pp.weimipopo.com/live/preview.html?uid=91648673&anchorUid=91625862&app=plpl
-
-六间房直播:
-https://v.6.cn/634435
-
-乐嗨直播:
-https://www.lehaitv.com/8059096
-
-花猫直播:
-https://h.catshow168.com/live/preview.html?uid=19066357&anchorUid=18895331
-
-Shopee:
-https://sg.shp.ee/GmpXeuf?uid=1006401066&session=802458
-
-Youtube(需配置cookie):
-https://www.youtube.com/watch?v=cS6zS5hi1w0
-
-淘宝(需配置cookie):
-https://tbzb.taobao.com/live?liveId=538503930649
-https://m.tb.cn/h.TWp0HTd
-
-京东:
-https://3.cn/28MLBy-E
-
-Faceit:
-https://www.faceit.com/zh/players/Compl1/stream
-
-连接直播:
-https://show.lailianjie.com/10000258
-
-咪咕直播:
-https://www.miguvideo.com/p/live/120000541321
-
-来秀直播:
-https://www.imkktv.com/h5/share/video.html?uid=1845195&roomId=1710496
-
-Picarto:
-https://www.picarto.tv/cuteavalanche
-```
-
-## 📖文档
-
-如需完整文档和高级用法，请访问官方文档 [Wiki](https://github.com/ihmily/StreamCap/wiki/%E4%B8%BB%E9%A1%B5)
-
-## ❤️贡献者
-
-<a href="https://github.com/ihmily/StreamCap/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=ihmily/StreamCap" />
-</a>
-
-## 📜许可证
-
-StreamCap在Apache License 2.0下发布。有关详情，请参阅[LICENSE](./LICENSE)文件。
-
-## 🙏特别感谢
-
-特别感谢以下开源项目和技术的支持：
-
-- [flet](https://github.com/flet-dev/flet)
-- [FFmpeg](https://ffmpeg.org)
-- [streamget](https://github.com/ihmily/streamget)
-
-如果您有任何问题或建议，请随时通过GitHub Issues与我们联系。
+本仓库沿用原项目许可证。详情请查看 [LICENSE](./LICENSE)。
